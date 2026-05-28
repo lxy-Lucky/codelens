@@ -12,6 +12,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from app.services import graph_enrich, neo4j_store, state
+from app.services.ts import executor as ts_executor
 from app.services.languages import LANG_TO_TS_GRAMMAR, SUPPORTED_EXTS, detect_language
 
 DEF_TYPES = {
@@ -32,11 +33,8 @@ def _parser(lang: str):
     grammar = LANG_TO_TS_GRAMMAR.get(lang)
     if not grammar:
         return None
-    try:
-        from tree_sitter_language_pack import get_parser
-        return get_parser(grammar)
-    except Exception:
-        return None
+    from app.services.ts import get_parser
+    return get_parser(grammar)
 
 
 def _def_name(node, src: bytes) -> str | None:
@@ -159,4 +157,8 @@ async def build_graph(repo_id: str) -> dict:
     repo = await asyncio.to_thread(state.get_repo, repo_id)
     if not repo:
         raise ValueError("仓库不存在")
-    return await asyncio.to_thread(_build_sync, repo_id, repo["path"], repo["excludes"])
+    # 跑在唯一的解析线程上,与索引共用,确保 tree-sitter Parser 不跨线程
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        ts_executor, _build_sync, repo_id, repo["path"], repo["excludes"]
+    )

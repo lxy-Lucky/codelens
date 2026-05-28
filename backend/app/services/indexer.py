@@ -13,6 +13,7 @@ from pathlib import Path
 from app.services import bm25_store, embedding, qdrant_store, state
 from app.services.chunker import chunk_source
 from app.services.languages import SUPPORTED_EXTS, detect_language
+from app.services.ts import executor as ts_executor
 
 MAX_FILE_BYTES = 1_000_000  # 跳过超大文件
 
@@ -96,6 +97,7 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
         yield {"stage": "error", "message": f"路径不存在或不是目录: {root_path}"}
         return
 
+    loop = asyncio.get_running_loop()
     qdrant_store.ensure_collection(embedding.embedding_dim())
     state.set_repo_status(repo_id, "indexing")
 
@@ -121,7 +123,7 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
                     lang_stats[lang] = lang_stats.get(lang, 0) + 1
                 yield {"stage": "skip", "current": i + 1, "total": total, "file": rel_path}
                 continue
-            _, lang = await asyncio.to_thread(_index_one_file, repo_id, root, file)
+            _, lang = await loop.run_in_executor(ts_executor, _index_one_file, repo_id, root, file)
             await asyncio.to_thread(state.upsert_file, repo_id, rel_path, fhash, lang)
             if lang:
                 lang_stats[lang] = lang_stats.get(lang, 0) + 1

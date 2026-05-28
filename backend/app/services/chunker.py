@@ -111,11 +111,10 @@ def _ts_chunks(source: str, lang: str, line_offset: int = 0) -> list[Chunk]:
     grammar = LANG_TO_TS_GRAMMAR.get(lang)
     if not grammar:
         return _window_chunks(source, line_offset)
-    try:
-        from tree_sitter_language_pack import get_parser
+    from app.services.ts import get_parser
 
-        parser = get_parser(grammar)
-    except Exception:
+    parser = get_parser(grammar)
+    if parser is None:
         return _window_chunks(source, line_offset)
 
     src_bytes = source.encode("utf-8")

@@ -20,11 +20,8 @@ def _parser(lang: str):
     grammar = LANG_TO_TS_GRAMMAR.get(lang)
     if not grammar:
         return None
-    try:
-        from tree_sitter_language_pack import get_parser
-        return get_parser(grammar)
-    except Exception:
-        return None
+    from app.services.ts import get_parser
+    return get_parser(grammar)
 
 
 def normalize_url(url: str) -> str:
