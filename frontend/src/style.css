@@ -38,3 +38,19 @@ body {
   overflow-x: auto;
 }
 .md :where(pre code) { background: none; color: #9d9a93; padding: 0; }
+
+/* markdown 排版(Tailwind base 会重置标题/列表,这里补回,主要给文档生成用) */
+.md :where(h1) { font-size: 1.5rem; font-weight: 600; margin: 0.8em 0 0.4em; color: #e8e6e1; }
+.md :where(h2) { font-size: 1.25rem; font-weight: 600; margin: 0.8em 0 0.4em; color: #e8e6e1; border-bottom: 1px solid #2e2f37; padding-bottom: 0.2em; }
+.md :where(h3) { font-size: 1.05rem; font-weight: 600; margin: 0.7em 0 0.3em; color: #e8e6e1; }
+.md :where(h4) { font-size: 0.95rem; font-weight: 600; margin: 0.6em 0 0.3em; color: #e8e6e1; }
+.md :where(ul) { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
+.md :where(ol) { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
+.md :where(li) { margin: 0.2em 0; }
+.md :where(a) { color: #d4a574; text-decoration: underline; }
+.md :where(strong) { color: #e8e6e1; font-weight: 600; }
+.md :where(blockquote) { border-left: 3px solid #3a3b44; padding-left: 0.8em; color: #9d9a93; margin: 0.5em 0; }
+.md :where(table) { border-collapse: collapse; margin: 0.6em 0; font-size: 0.85em; }
+.md :where(th, td) { border: 1px solid #2e2f37; padding: 4px 10px; text-align: left; }
+.md :where(th) { background: #1c1d22; color: #e8e6e1; }
+.md :where(hr) { border: none; border-top: 1px solid #2e2f37; margin: 1em 0; }

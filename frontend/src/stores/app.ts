@@ -16,7 +16,7 @@ interface State {
   currentRepoId: string | null
   workMode: WorkMode
   tree: TreeNode[]
-  mainTab: 'results' | 'code' | 'graph'
+  mainTab: 'results' | 'code' | 'graph' | 'docs'
   openFile: OpenFile | null
   graphTarget: { symbolKey: string; label: string } | null
   graphHops: number

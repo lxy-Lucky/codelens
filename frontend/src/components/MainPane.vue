@@ -6,6 +6,7 @@ import type { CodeChunkHit } from '../api/types'
 // 懒加载 Monaco / Mermaid:用到时才拉取,不拖累首屏
 const CodeViewer = defineAsyncComponent(() => import('./CodeViewer.vue'))
 const GraphView = defineAsyncComponent(() => import('./GraphView.vue'))
+const DocsView = defineAsyncComponent(() => import('./DocsView.vue'))
 
 const app = useApp()
 const query = ref(app.searchQuery)
@@ -123,6 +124,13 @@ function openHit(hit: CodeChunkHit) {
       >
         图谱<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
       </div>
+      <div
+        class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
+        :class="app.mainTab === 'docs' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
+        @click="app.mainTab = 'docs'"
+      >
+        文档
+      </div>
     </div>
 
     <!-- results -->
@@ -174,6 +182,11 @@ function openHit(hit: CodeChunkHit) {
     <!-- graph -->
     <div v-show="app.mainTab === 'graph'" class="flex-1 min-h-0">
       <GraphView />
+    </div>
+
+    <!-- docs -->
+    <div v-show="app.mainTab === 'docs'" class="flex-1 min-h-0">
+      <DocsView />
     </div>
 
     <!-- 右键菜单 -->
