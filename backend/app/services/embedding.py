@@ -26,9 +26,11 @@ def _embedder():
 
 @lru_cache
 def _reranker():
-    from FlagEmbedding import FlagReranker
+    import torch
+    from sentence_transformers import CrossEncoder
 
-    return FlagReranker(settings.reranker_model, use_fp16=False)
+    torch.set_num_threads(1)  # 同样避免非主线程 OpenMP 死锁
+    return CrossEncoder(settings.reranker_model, device=settings.embedding_device, max_length=512)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
@@ -50,9 +52,14 @@ def embedding_dim() -> int:
 
 
 def rerank(query: str, docs: list[str]) -> list[float]:
-    """返回每个 doc 与 query 的相关性分数。"""
+    """返回每个 doc 与 query 的相关性分数(min-max 归一到 [0,1])。"""
     if not docs:
         return []
-    pairs = [[query, d] for d in docs]
-    scores = _reranker().compute_score(pairs, normalize=True)
-    return scores if isinstance(scores, list) else [scores]
+    import numpy as np
+
+    pairs = [[query, d[:MAX_EMBED_CHARS]] for d in docs]
+    raw = np.asarray(_reranker().predict(pairs, convert_to_numpy=True), dtype=float).ravel()
+    # 不依赖 predict 是否已 sigmoid:在候选集内 min-max 归一,保证排序单调且与加权可比
+    if raw.size > 1 and raw.max() > raw.min():
+        raw = (raw - raw.min()) / (raw.max() - raw.min())
+    return raw.tolist()
