@@ -1,5 +1,10 @@
 """bge-m3 embedding + bge-reranker。延迟加载,默认跑 CPU 以给 14B 腾显存。"""
+import os
 from functools import lru_cache
+
+# 必须在 transformers/tokenizers 导入前设置:否则 fast tokenizer 的 Rust 线程
+# 在子线程中调用会死锁(经典静默卡死)。
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from app.config import settings
 
@@ -21,7 +26,9 @@ def _reranker():
 def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    vecs = _embedder().encode(texts, normalize_embeddings=True, batch_size=32)
+    vecs = _embedder().encode(
+        texts, normalize_embeddings=True, batch_size=16, show_progress_bar=False
+    )
     return [v.tolist() for v in vecs]
 
 

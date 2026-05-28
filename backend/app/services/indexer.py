@@ -5,6 +5,7 @@
 """
 import asyncio
 import hashlib
+import time
 import uuid
 from collections.abc import AsyncIterator
 from fnmatch import fnmatch
@@ -44,16 +45,24 @@ def _walk_files(root: Path, excludes: list[str]) -> list[Path]:
     return out
 
 
+def _log(msg: str) -> None:
+    print(f"[index] {msg}", flush=True)
+
+
 def _index_one_file(repo_id: str, root: Path, file: Path) -> tuple[int, str | None]:
     """处理单个文件,返回 (chunk 数, 语言)。"""
     rel_path = str(file.relative_to(root)).replace("\\", "/")
     language = detect_language(rel_path)
     raw = file.read_bytes()
     if len(raw) > MAX_FILE_BYTES:
+        _log(f"skip(too big {len(raw)}B): {rel_path}")
         return 0, language
     source = raw.decode("utf-8", "ignore")
 
+    t0 = time.perf_counter()
     chunks = chunk_source(source, language) if language else []
+    t_chunk = time.perf_counter() - t0
+    _log(f"parsed {rel_path}: {len(chunks)} chunks in {t_chunk:.2f}s")
 
     # 删旧向量(级联),再写新的
     old_ids = state.get_chunk_ids_for_file(repo_id, rel_path)
@@ -65,7 +74,9 @@ def _index_one_file(repo_id: str, root: Path, file: Path) -> tuple[int, str | No
         return 0, language
 
     texts = [c.text for c in chunks]
+    t1 = time.perf_counter()
     vectors = embedding.embed_texts(texts)
+    _log(f"embedded {rel_path}: {len(texts)} chunks in {time.perf_counter() - t1:.2f}s")
     points = []
     chunk_ids = []
     for c, vec in zip(chunks, vectors):
@@ -85,7 +96,9 @@ def _index_one_file(repo_id: str, root: Path, file: Path) -> tuple[int, str | No
                 "text": c.text,
             },
         })
+    t2 = time.perf_counter()
     qdrant_store.upsert_chunks(points)
+    _log(f"upserted {rel_path}: {len(points)} points in {time.perf_counter() - t2:.2f}s")
     state.replace_file_chunks(repo_id, rel_path, chunk_ids)
     return len(chunks), language
 
@@ -123,6 +136,7 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
                     lang_stats[lang] = lang_stats.get(lang, 0) + 1
                 yield {"stage": "skip", "current": i + 1, "total": total, "file": rel_path}
                 continue
+            yield {"stage": "processing", "current": i + 1, "total": total, "file": rel_path}
             _, lang = await loop.run_in_executor(ts_executor, _index_one_file, repo_id, root, file)
             await asyncio.to_thread(state.upsert_file, repo_id, rel_path, fhash, lang)
             if lang:
