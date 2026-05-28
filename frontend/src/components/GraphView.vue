@@ -11,6 +11,14 @@ const building = ref(false)
 const status = ref('')
 const errorMsg = ref('')
 const nodeCount = ref(0)
+const scale = ref(1)
+
+function zoom(delta: number) {
+  scale.value = Math.min(3, Math.max(0.3, +(scale.value + delta).toFixed(2)))
+}
+function zoomReset() {
+  scale.value = 1
+}
 
 function esc(s: string): string {
   return s.replace(/["[\]{}|<>]/g, ' ').slice(0, 40)
@@ -63,7 +71,14 @@ async function render() {
     }
     const { text, byId } = buildMermaid(g.nodes, g.edges, app.graphTarget.symbolKey)
     const mermaid = (await import('mermaid')).default
-    mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', flowchart: { useMaxWidth: true } })
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: { useMaxWidth: true },
+      maxTextSize: 500000, // 默认 5 万,调高避免大图报 Maximum text size exceeded
+      maxEdges: 2000, // 默认 500
+    })
     const { svg } = await mermaid.render('cl-graph-' + Date.now(), text)
     if (!container.value) return
     container.value.innerHTML = svg
@@ -106,7 +121,7 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
+  <div class="h-full flex flex-col relative">
     <!-- toolbar -->
     <div class="flex items-center gap-3 px-6 py-2 border-b border-border-subtle text-[0.74rem]">
       <button
@@ -131,7 +146,7 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
     </div>
 
     <!-- canvas -->
-    <div class="flex-1 overflow-auto p-4">
+    <div class="flex-1 overflow-auto p-4 relative">
       <div v-if="!app.graphTarget" class="p-16 text-center text-txt-tertiary text-[0.8rem]">
         在检索结果或代码里右键某个函数 →「查看调用图」
       </div>
@@ -141,7 +156,17 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
       </div>
       <div v-if="errorMsg" class="text-[0.76rem] text-err mb-3">{{ errorMsg }}</div>
       <div v-if="status" class="text-[0.76rem] text-txt-secondary mb-3">{{ status }}</div>
-      <div ref="container" class="cl-graph" />
+      <div ref="container" class="cl-graph" :style="{ transform: `scale(${scale})`, transformOrigin: 'top left' }" />
+    </div>
+
+    <!-- 缩放控制(右下角固定,不随内容滚动) -->
+    <div
+      v-if="app.graphTarget && nodeCount"
+      class="absolute bottom-4 right-4 z-10 flex flex-col gap-1"
+    >
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" title="放大" @click="zoom(0.2)">＋</button>
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" title="缩小" @click="zoom(-0.2)">－</button>
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-tertiary hover:text-accent hover:border-accent text-[0.6rem] leading-none shadow" title="重置" @click="zoomReset">{{ Math.round(scale * 100) }}%</button>
     </div>
   </div>
 </template>

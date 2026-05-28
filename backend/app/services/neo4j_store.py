@@ -65,7 +65,7 @@ def subgraph(repo_id: str, symbol_key: str, hops: int = 1) -> dict:
                 CALL {{
                   WITH center
                   MATCH path=(center)-[*1..{hops}]-(m:Symbol)
-                  RETURN path
+                  RETURN path LIMIT 400
                 }}
                 WITH collect(path) AS paths
                 RETURN paths""",

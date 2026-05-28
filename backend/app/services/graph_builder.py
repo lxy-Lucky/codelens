@@ -28,6 +28,13 @@ CALL_TYPES = {
     "tsx": {"call_expression"},
 }
 
+# 极通用/JDK 内置方法名:几乎总是库调用,连进图里只是噪声
+CALL_STOPWORDS = {
+    "tostring", "equals", "hashcode", "getclass", "clone", "wait", "notify",
+    "notifyall", "valueof", "compareto", "name", "ordinal", "values",
+    "println", "print", "format", "log", "info", "debug", "warn", "error",
+}
+
 
 def _parser(lang: str):
     grammar = LANG_TO_TS_GRAMMAR.get(lang)
@@ -107,29 +114,48 @@ def _build_sync(repo_id: str, root_path: str, excludes: list[str]) -> dict:
     ]
     symbols, name_to_keys, _ = _collect_defs(root, files)
 
-    edges: list[dict] = []
+    def _resolve(callee: str, src_file: str) -> tuple[str, float] | None:
+        """名字解析为调用目标。降噪:停用词跳过;优先同文件;仓库内唯一才连;跨文件多义跳过。"""
+        if callee.lower() in CALL_STOPWORDS:
+            return None
+        cands = name_to_keys.get(callee)
+        if not cands:
+            return None
+        same = [k for k in cands if k.rsplit("::", 1)[0] == src_file]
+        if same:
+            return same[0], 0.9                # 同文件:高置信
+        if len(cands) == 1:
+            return cands[0], 0.75              # 全库唯一:中置信
+        return None                            # 跨文件多义(JDK 同名碰撞等)→ 跳过
+
+    edge_map: dict[tuple, dict] = {}  # (src,dst,type) 去重,保留最高置信
+
+    def _add_edge(s: str, d: str, t: str, conf: float) -> None:
+        if s == d:
+            return
+        k = (s, d, t)
+        if k not in edge_map or conf > edge_map[k]["confidence"]:
+            edge_map[k] = {"src": s, "dst": d, "type": t, "confidence": conf}
+
     for sym in symbols:
         node = sym["_node"]
         lang = detect_language(sym["file"])
         call_types = CALL_TYPES.get(lang, set())
-        src = None
-        # 找该符号所在文件 src:从 symbols 同 file 复用较繁,直接重读
         src = (root / sym["file"]).read_bytes()
 
         def walk_calls(n):
             if n.type in call_types:
                 callee = _callee_name(n, src, lang)
-                if callee and callee in name_to_keys:
-                    targets = name_to_keys[callee]
-                    conf = 0.9 if len(targets) == 1 else 0.5
-                    for tkey in targets:
-                        if tkey != sym["key"]:
-                            edges.append({"src": sym["key"], "dst": tkey,
-                                          "type": "CALLS", "confidence": conf})
+                if callee:
+                    r = _resolve(callee, sym["file"])
+                    if r:
+                        _add_edge(sym["key"], r[0], "CALLS", r[1])
             for ch in n.children:
                 walk_calls(ch)
 
         walk_calls(node)
+
+    edges = list(edge_map.values())
 
     clean_symbols = [{k: v for k, v in s.items() if k != "_node"} for s in symbols]
 
