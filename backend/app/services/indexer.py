@@ -74,6 +74,7 @@ def _index_one_file(repo_id: str, root: Path, file: Path) -> tuple[int, str | No
         return 0, language
 
     texts = [c.text for c in chunks]
+    _log(f"embedding {rel_path}: {len(texts)} chunks, maxlen={max(len(t) for t in texts)} …")
     t1 = time.perf_counter()
     vectors = embedding.embed_texts(texts)
     _log(f"embedded {rel_path}: {len(texts)} chunks in {time.perf_counter() - t1:.2f}s")
