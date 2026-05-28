@@ -57,6 +57,26 @@ def upsert_symbols_and_edges(repo_id: str, symbols: list[dict], edges: list[dict
             )
 
 
+def file_deps(repo_id: str, file_key: str) -> dict:
+    """某文件的依赖(它 import 的)与被依赖(import 它的),基于 DEPENDS_ON 边。"""
+    with driver().session() as s:
+        imp = s.run(
+            """MATCH (f:Symbol {repo_id:$r, key:$k})-[e:REL]->(t:Symbol)
+               WHERE e.type='DEPENDS_ON'
+               RETURN t.key AS key, t.name AS name, t.file AS file""",
+            r=repo_id, k=file_key,
+        )
+        imports = [{"key": x["key"], "name": x["name"], "file": x["file"]} for x in imp]
+        by = s.run(
+            """MATCH (sx:Symbol)-[e:REL]->(f:Symbol {repo_id:$r, key:$k})
+               WHERE e.type='DEPENDS_ON'
+               RETURN sx.key AS key, sx.name AS name, sx.file AS file""",
+            r=repo_id, k=file_key,
+        )
+        imported_by = [{"key": x["key"], "name": x["name"], "file": x["file"]} for x in by]
+    return {"imports": imports, "imported_by": imported_by}
+
+
 def subgraph(repo_id: str, symbol_key: str, hops: int = 1) -> dict:
     """返回某节点 ±hops 跳的子图,供 Mermaid 渲染。"""
     with driver().session() as s:

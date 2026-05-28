@@ -26,6 +26,14 @@ async def subgraph(repo_id: str, symbol_key: str = Query(...), hops: int = 1):
         raise HTTPException(500, f"查询失败: {e}")
 
 
+@router.get("/{repo_id}/deps")
+async def deps(repo_id: str, path: str = Query(...)):
+    try:
+        return await asyncio.to_thread(neo4j_store.file_deps, repo_id, path)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"查询失败(Neo4j 是否启动?): {e}")
+
+
 @router.get("/{repo_id}/mermaid")
 async def mermaid(repo_id: str, symbol_key: str = Query(...), hops: int = 1):
     """返回 Mermaid flowchart 文本,供前端直接渲染。"""

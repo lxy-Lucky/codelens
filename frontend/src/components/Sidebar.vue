@@ -110,7 +110,7 @@ async function removeRepo(id: string, e: MouseEvent) {
           :key="m.key"
           class="flex items-center gap-2.5 px-3 py-1.5 rounded cursor-pointer text-[0.78rem]"
           :class="app.workMode === m.key ? 'bg-accent/10 text-accent' : 'text-txt-secondary hover:bg-bg-hover hover:text-txt-primary'"
-          @click="app.workMode = m.key"
+          @click="app.setWorkMode(m.key)"
         >
           <span>{{ m.icon }}</span><span>{{ m.label }}</span>
         </li>

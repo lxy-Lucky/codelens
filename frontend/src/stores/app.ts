@@ -16,7 +16,7 @@ interface State {
   currentRepoId: string | null
   workMode: WorkMode
   tree: TreeNode[]
-  mainTab: 'results' | 'code' | 'graph' | 'docs'
+  mainTab: 'results' | 'code' | 'graph' | 'docs' | 'deps'
   openFile: OpenFile | null
   graphTarget: { symbolKey: string; label: string } | null
   graphHops: number
@@ -175,6 +175,18 @@ export const useApp = defineStore('app', {
       this.openFile = null
       this.selection = null
       this.mainTab = 'results'
+    },
+
+    // 左侧工作模式 → 中间区对应 tab 联动
+    setWorkMode(mode: WorkMode) {
+      this.workMode = mode
+      const map: Record<WorkMode, State['mainTab']> = {
+        search: 'results',
+        analysis: 'deps',
+        flow: 'graph',
+        docs: 'docs',
+      }
+      this.mainTab = map[mode]
     },
 
     // 打开某符号的调用图(右键「查看调用图」入口)

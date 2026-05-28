@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { CodeChunkHit, RepoInfo, Subgraph, TreeNode } from './types'
+import type { CodeChunkHit, FileDeps, RepoInfo, Subgraph, TreeNode } from './types'
 
 const http = axios.create({ baseURL: '' })
 
@@ -29,6 +29,8 @@ export const api = {
     http
       .get<Subgraph>(`/api/graph/${id}/subgraph`, { params: { symbol_key, hops } })
       .then((r) => r.data),
+  deps: (id: string, path: string) =>
+    http.get<FileDeps>(`/api/graph/${id}/deps`, { params: { path } }).then((r) => r.data),
 }
 
 /** SSE over POST (fetch + ReadableStream). 解析 `data: {...}` 行,逐条回调。 */

@@ -4,6 +4,7 @@
 
 边均带 confidence,低于精确直连。跨语言只在 URL/名字能对上时才连,不硬连。
 """
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -172,6 +173,96 @@ def build_api_edges(routes: dict[str, str], calls: list[tuple[str, str]]) -> lis
         if target:
             edges.append({"src": caller_key, "dst": target, "type": "CALLS_API", "confidence": 0.6})
     return edges
+
+
+# ─── 文件级依赖(DEPENDS_ON) ───
+_JS_EXTS = (".ts", ".tsx", ".js", ".jsx", ".vue")
+_JAVA_PKG = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.M)
+_JAVA_IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+?)(\.\*)?\s*;", re.M)
+_JS_FROM = re.compile(r"""from\s*['"]([^'"]+)['"]""")
+_JS_REQUIRE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
+
+
+def _resolve_js(importer_rel: str, spec: str, fileset: set[str]) -> str | None:
+    if not spec.startswith("."):  # 裸包 / 别名(@/…)无法可靠解析,跳过
+        return None
+    base = posixpath.normpath(posixpath.join(posixpath.dirname(importer_rel), spec))
+    cands: list[str] = []
+    if any(base.endswith(e) for e in _JS_EXTS):
+        cands.append(base)
+    cands += [base + e for e in _JS_EXTS]
+    cands += [base + "/index" + e for e in _JS_EXTS]
+    for c in cands:
+        if c in fileset:
+            return c
+    return None
+
+
+def extract_file_deps(root: Path, files: list[Path]):
+    """返回 (file 节点列表, DEPENDS_ON 边列表)。Java 按 FQN 解析,JS/TS/Vue 按相对路径解析。"""
+    file_text: dict[str, tuple[str, str]] = {}
+    java_fqn: dict[str, str] = {}
+    fileset: set[str] = set()
+
+    for f in files:
+        rel = str(f.relative_to(root)).replace("\\", "/")
+        lang = detect_language(rel)
+        if lang not in ("java", "javascript", "typescript", "tsx", "vue"):
+            continue
+        try:
+            txt = f.read_text("utf-8", "ignore")
+        except OSError:
+            continue
+        fileset.add(rel)
+        file_text[rel] = (lang, txt)
+        if lang == "java":
+            m = _JAVA_PKG.search(txt)
+            pkg = m.group(1) if m else ""
+            stem = rel.rsplit("/", 1)[-1][:-5]  # 去掉 .java
+            java_fqn[f"{pkg}.{stem}" if pkg else stem] = rel
+
+    edges: dict[tuple, float] = {}
+    nodes: set[str] = set()
+
+    def add(src: str, dst: str, conf: float) -> None:
+        if src == dst or dst not in fileset:
+            return
+        nodes.update((src, dst))
+        k = (src, dst)
+        if k not in edges or conf > edges[k]:
+            edges[k] = conf
+
+    for rel, (lang, txt) in file_text.items():
+        if lang == "java":
+            for m in _JAVA_IMPORT.finditer(txt):
+                fqn, wild = m.group(1), m.group(2)
+                if wild:  # import x.y.*; 通配,逐个连该包下已知类
+                    prefix = fqn + "."
+                    for ofqn, orel in java_fqn.items():
+                        if ofqn.startswith(prefix) and "." not in ofqn[len(prefix):]:
+                            add(rel, orel, 0.8)
+                    continue
+                tgt = java_fqn.get(fqn)
+                if tgt:
+                    add(rel, tgt, 0.9)
+        else:
+            for m in _JS_FROM.finditer(txt):
+                tgt = _resolve_js(rel, m.group(1), fileset)
+                if tgt:
+                    add(rel, tgt, 0.85)
+            for m in _JS_REQUIRE.finditer(txt):
+                tgt = _resolve_js(rel, m.group(1), fileset)
+                if tgt:
+                    add(rel, tgt, 0.85)
+
+    file_symbols = [
+        {"key": r, "name": r.rsplit("/", 1)[-1], "kind": "file", "file": r, "line": 1}
+        for r in nodes
+    ]
+    dep_edges = [
+        {"src": s, "dst": d, "type": "DEPENDS_ON", "confidence": c} for (s, d), c in edges.items()
+    ]
+    return file_symbols, dep_edges
 
 
 # ─── MyBatis mapper XML ───

@@ -7,6 +7,7 @@ import type { CodeChunkHit } from '../api/types'
 const CodeViewer = defineAsyncComponent(() => import('./CodeViewer.vue'))
 const GraphView = defineAsyncComponent(() => import('./GraphView.vue'))
 const DocsView = defineAsyncComponent(() => import('./DocsView.vue'))
+const AnalysisView = defineAsyncComponent(() => import('./AnalysisView.vue'))
 
 const app = useApp()
 const query = ref(app.searchQuery)
@@ -126,6 +127,13 @@ function openHit(hit: CodeChunkHit) {
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
+        :class="app.mainTab === 'deps' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
+        @click="app.mainTab = 'deps'"
+      >
+        依赖
+      </div>
+      <div
+        class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'docs' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'docs'"
       >
@@ -182,6 +190,11 @@ function openHit(hit: CodeChunkHit) {
     <!-- graph -->
     <div v-show="app.mainTab === 'graph'" class="flex-1 min-h-0">
       <GraphView />
+    </div>
+
+    <!-- deps -->
+    <div v-show="app.mainTab === 'deps'" class="flex-1 min-h-0">
+      <AnalysisView />
     </div>
 
     <!-- docs -->

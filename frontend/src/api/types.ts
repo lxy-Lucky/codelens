@@ -64,3 +64,14 @@ export interface Subgraph {
   nodes: GraphNode[]
   edges: GraphEdge[]
 }
+
+export interface FileRef {
+  key: string
+  name: string
+  file: string
+}
+
+export interface FileDeps {
+  imports: FileRef[]
+  imported_by: FileRef[]
+}

@@ -164,9 +164,10 @@ def _build_sync(repo_id: str, root_path: str, excludes: list[str]) -> dict:
     fe_calls = graph_enrich.extract_frontend_calls(root, files)
     api_edges = graph_enrich.build_api_edges(routes, fe_calls)
     xml_symbols, xml_edges = graph_enrich.extract_mybatis(root, files, name_to_keys)
+    dep_symbols, dep_edges = graph_enrich.extract_file_deps(root, files)
 
-    all_symbols = clean_symbols + xml_symbols
-    all_edges = edges + api_edges + xml_edges
+    all_symbols = clean_symbols + xml_symbols + dep_symbols
+    all_edges = edges + api_edges + xml_edges + dep_edges
 
     neo4j_store.delete_repo(repo_id)
     neo4j_store.upsert_symbols_and_edges(repo_id, all_symbols, all_edges)
@@ -176,6 +177,7 @@ def _build_sync(repo_id: str, root_path: str, excludes: list[str]) -> dict:
         "routes": len(routes),
         "api_edges": len(api_edges),
         "mybatis_edges": len(xml_edges),
+        "dep_edges": len(dep_edges),
     }
 
 
