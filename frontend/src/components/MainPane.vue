@@ -83,11 +83,20 @@ function openHit(hit: CodeChunkHit) {
         检索结果 <span class="text-[0.62rem]">{{ app.searchHits.length }}</span>
       </div>
       <div
-        class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
+        class="group px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2 flex items-center gap-1.5"
         :class="app.mainTab === 'code' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'code'"
       >
-        代码 <span v-if="app.openFile" class="font-mono text-[0.62rem]">· {{ app.openFile.path.split('/').pop() }}</span>
+        代码
+        <span v-if="app.openFile" class="font-mono text-[0.62rem]">· {{ app.openFile.path.split('/').pop() }}</span>
+        <button
+          v-if="app.openFile"
+          class="opacity-0 group-hover:opacity-100 w-4 h-4 grid place-items-center rounded text-txt-tertiary hover:text-err hover:bg-err/10 text-[0.7rem] leading-none"
+          title="关闭文件"
+          @click.stop="app.closeFile()"
+        >
+          ✕
+        </button>
       </div>
     </div>
 

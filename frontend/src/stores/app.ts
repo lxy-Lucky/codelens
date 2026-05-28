@@ -167,6 +167,12 @@ export const useApp = defineStore('app', {
         : [...this.searchLanguages, lang]
     },
 
+    closeFile() {
+      this.openFile = null
+      this.selection = null
+      this.mainTab = 'results'
+    },
+
     setSelection(sel: State['selection']) {
       this.selection = sel
     },

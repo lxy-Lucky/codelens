@@ -92,7 +92,24 @@ watch(
   () => applyHighlight(),
 )
 
-onBeforeUnmount(() => editor.value?.dispose())
+// Ctrl/Cmd+F:代码 tab 激活时用 Monaco 内置查找,拦截浏览器查找
+function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && app.mainTab === 'code') {
+    e.preventDefault()
+    e.stopPropagation()
+    const ed = editor.value
+    if (ed) {
+      ed.focus()
+      ed.getAction('actions.find')?.run()
+    }
+  }
+}
+window.addEventListener('keydown', onKeydown, true)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown, true)
+  editor.value?.dispose()
+})
 </script>
 
 <template>

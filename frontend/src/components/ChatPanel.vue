@@ -46,6 +46,7 @@ async function send() {
         selected_code: sel?.code ?? null,
         selected_file: sel?.file ?? null,
         selected_range: sel?.range ?? null,
+        languages: app.searchLanguages,
       },
       (ev) => {
         if (ev.type === 'refs') ai.refs = ev.refs
@@ -138,7 +139,7 @@ function isTyping(m: ChatMsg, idx: number): boolean {
         </div>
         <div class="min-w-0 max-w-[85%]">
           <div
-            class="px-3.5 py-2.5 rounded-lg text-[0.78rem] leading-relaxed"
+            class="px-3.5 py-2.5 rounded-lg text-[0.78rem] leading-relaxed break-words overflow-hidden"
             :class="m.role === 'user' ? 'bg-accent/10 text-txt-primary' : 'bg-bg-tertiary border border-border-subtle text-txt-secondary'"
           >
             <!-- 打字动效 -->
@@ -154,12 +155,13 @@ function isTyping(m: ChatMsg, idx: number): boolean {
             <div
               v-for="(r, j) in m.refs"
               :key="j"
-              class="flex items-center gap-2 px-2.5 py-1.5 bg-bg-tertiary border border-border-subtle rounded cursor-pointer hover:border-accent"
+              class="flex items-center gap-2 px-2.5 py-1.5 bg-bg-tertiary border border-border-subtle rounded cursor-pointer hover:border-accent min-w-0"
+              :title="`${r.file}:${r.start_line}`"
               @click="openRef(r)"
             >
-              <span class="text-[0.7rem]">📄</span>
-              <span class="font-mono text-[0.68rem] text-txt-primary truncate">{{ r.file }}:{{ r.start_line }}</span>
-              <span v-if="r.symbol" class="text-[0.62rem] text-txt-tertiary ml-auto">{{ r.symbol }}</span>
+              <span class="text-[0.7rem] shrink-0">📄</span>
+              <span class="font-mono text-[0.68rem] text-txt-primary truncate flex-1 min-w-0">{{ r.file }}:{{ r.start_line }}</span>
+              <span v-if="r.symbol" class="text-[0.62rem] text-txt-tertiary shrink-0 max-w-[35%] truncate">{{ r.symbol }}</span>
             </div>
           </div>
         </div>
