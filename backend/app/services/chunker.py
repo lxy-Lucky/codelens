@@ -45,6 +45,29 @@ MAX_CHUNK_LINES = 200  # 超大定义二次切
 WINDOW_LINES = 60      # 退化滑窗大小
 WINDOW_OVERLAP = 10
 
+# 各语言的注释节点类型(java: line_comment/block_comment;js/ts: comment)
+COMMENT_TYPES = {"comment", "line_comment", "block_comment"}
+
+
+def _leading_comment_start(node) -> tuple[int, int]:
+    """向上吞并紧邻的注释兄弟节点,返回 (起始字节, 起始行)。
+
+    允许多条连续注释堆叠(每条与下一块相隔不超过 1 行)。
+    """
+    start_byte = node.start_byte
+    start_row = node.start_point[0]
+    cur = node
+    while True:
+        prev = cur.prev_sibling
+        if prev is None or prev.type not in COMMENT_TYPES:
+            break
+        if start_row - prev.end_point[0] > 1:  # 中间空行过多,不算紧邻
+            break
+        start_byte = prev.start_byte
+        start_row = prev.start_point[0]
+        cur = prev
+    return start_byte, start_row
+
 
 @dataclass
 class Chunk:
@@ -126,11 +149,13 @@ def _ts_chunks(source: str, lang: str, line_offset: int = 0) -> list[Chunk]:
         if node.type in targets:
             start = node.start_point[0]
             end = node.end_point[0]
-            text = src_bytes[node.start_byte : node.end_byte].decode("utf-8", "ignore")
+            # 把紧邻在定义上方的注释(Javadoc/行注释)并入 chunk,让中日英文档进入嵌入文本
+            c_start_byte, c_start_row = _leading_comment_start(node)
+            text = src_bytes[c_start_byte : node.end_byte].decode("utf-8", "ignore")
             chunk = Chunk(
                 symbol=_node_name(node, src_bytes),
                 kind=_kind_of(node.type),
-                start_line=line_offset + start + 1,
+                start_line=line_offset + c_start_row + 1,
                 end_line=line_offset + end + 1,
                 text=text,
             )
