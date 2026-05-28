@@ -74,6 +74,18 @@ onMounted(() => {
       app.setSelection(null)
     }
   })
+  // 右键菜单:对光标所在标识符查看调用图
+  editor.value.addAction({
+    id: 'codelens.viewCallGraph',
+    label: '🗺️ 查看调用图',
+    contextMenuGroupId: 'navigation',
+    contextMenuOrder: 1.5,
+    run: (ed) => {
+      const pos = ed.getPosition()
+      const word = pos ? ed.getModel()?.getWordAtPosition(pos)?.word : null
+      if (word) app.openCallGraph(`${props.path}::${word}`, word)
+    },
+  })
   applyHighlight()
 })
 

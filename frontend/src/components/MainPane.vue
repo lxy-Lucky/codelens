@@ -3,11 +3,29 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useApp } from '../stores/app'
 import type { CodeChunkHit } from '../api/types'
 
-// 懒加载 Monaco:仅在打开文件时才拉取这部分代码,不拖累首屏
+// 懒加载 Monaco / Mermaid:用到时才拉取,不拖累首屏
 const CodeViewer = defineAsyncComponent(() => import('./CodeViewer.vue'))
+const GraphView = defineAsyncComponent(() => import('./GraphView.vue'))
 
 const app = useApp()
 const query = ref(app.searchQuery)
+
+// 右键「查看调用图」上下文菜单
+const ctx = ref<{ show: boolean; x: number; y: number; hit: CodeChunkHit | null }>({
+  show: false,
+  x: 0,
+  y: 0,
+  hit: null,
+})
+function onCtx(e: MouseEvent, hit: CodeChunkHit) {
+  if (!hit.symbol) return // 无符号名(整块/配置)无法定位调用图
+  ctx.value = { show: true, x: e.clientX, y: e.clientY, hit }
+}
+function viewGraph() {
+  const h = ctx.value.hit
+  if (h?.symbol) app.openCallGraph(`${h.file_path}::${h.symbol}`, h.symbol)
+  ctx.value.show = false
+}
 
 watch(
   () => app.searchQuery,
@@ -98,6 +116,13 @@ function openHit(hit: CodeChunkHit) {
           ✕
         </button>
       </div>
+      <div
+        class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
+        :class="app.mainTab === 'graph' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
+        @click="app.mainTab = 'graph'"
+      >
+        图谱<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
+      </div>
     </div>
 
     <!-- results -->
@@ -116,6 +141,7 @@ function openHit(hit: CodeChunkHit) {
           :key="hit.chunk_id"
           class="px-6 py-3.5 border-b border-border-subtle cursor-pointer hover:bg-accent/[0.04]"
           @click="openHit(hit)"
+          @contextmenu.prevent="onCtx($event, hit)"
         >
           <div class="flex items-center gap-2 mb-1.5">
             <span class="text-[0.65rem] font-semibold uppercase px-1.5 py-0.5 rounded bg-info/15 text-info">
@@ -144,5 +170,23 @@ function openHit(hit: CodeChunkHit) {
         从左侧仓库结构点击文件查看代码
       </div>
     </div>
+
+    <!-- graph -->
+    <div v-show="app.mainTab === 'graph'" class="flex-1 min-h-0">
+      <GraphView />
+    </div>
+
+    <!-- 右键菜单 -->
+    <template v-if="ctx.show">
+      <div class="fixed inset-0 z-40" @click="ctx.show = false" @contextmenu.prevent="ctx.show = false" />
+      <div
+        class="fixed z-50 bg-bg-elevated border border-border-medium rounded-md shadow-lg py-1 text-[0.74rem]"
+        :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
+      >
+        <button class="block w-full text-left px-3 py-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt-primary" @click="viewGraph">
+          🗺️ 查看调用图
+        </button>
+      </div>
+    </template>
   </main>
 </template>

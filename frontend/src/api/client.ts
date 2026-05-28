@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { CodeChunkHit, RepoInfo, TreeNode } from './types'
+import type { CodeChunkHit, RepoInfo, Subgraph, TreeNode } from './types'
 
 const http = axios.create({ baseURL: '' })
 
@@ -19,12 +19,15 @@ export const api = {
     http
       .post<{ query: string; hits: CodeChunkHit[] }>('/api/search', { repo_id, query, languages })
       .then((r) => r.data),
-  buildGraph: (id: string) => http.post(`/api/graph/${id}/build`).then((r) => r.data),
-  mermaid: (id: string, symbol_key: string, hops = 1) =>
+  buildGraph: (id: string) =>
     http
-      .get<{ mermaid: string; node_count: number }>(`/api/graph/${id}/mermaid`, {
-        params: { symbol_key, hops },
-      })
+      .post<{ symbols: number; edges: number; routes: number; api_edges: number; mybatis_edges: number }>(
+        `/api/graph/${id}/build`,
+      )
+      .then((r) => r.data),
+  subgraph: (id: string, symbol_key: string, hops = 1) =>
+    http
+      .get<Subgraph>(`/api/graph/${id}/subgraph`, { params: { symbol_key, hops } })
       .then((r) => r.data),
 }
 

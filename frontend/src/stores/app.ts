@@ -16,8 +16,10 @@ interface State {
   currentRepoId: string | null
   workMode: WorkMode
   tree: TreeNode[]
-  mainTab: 'results' | 'code'
+  mainTab: 'results' | 'code' | 'graph'
   openFile: OpenFile | null
+  graphTarget: { symbolKey: string; label: string } | null
+  graphHops: number
   searchQuery: string
   searchLanguages: string[]
   searchHits: CodeChunkHit[]
@@ -37,6 +39,8 @@ export const useApp = defineStore('app', {
     tree: [],
     mainTab: 'results',
     openFile: null,
+    graphTarget: null,
+    graphHops: 1,
     searchQuery: '',
     searchLanguages: [],
     searchHits: [],
@@ -171,6 +175,18 @@ export const useApp = defineStore('app', {
       this.openFile = null
       this.selection = null
       this.mainTab = 'results'
+    },
+
+    // 打开某符号的调用图(右键「查看调用图」入口)
+    openCallGraph(symbolKey: string, label: string) {
+      this.graphTarget = { symbolKey, label }
+      this.workMode = 'flow'
+      this.mainTab = 'graph'
+    },
+
+    async buildGraph(): Promise<{ symbols: number; edges: number }> {
+      if (!this.currentRepoId) throw new Error('未选择仓库')
+      return api.buildGraph(this.currentRepoId)
     },
 
     setSelection(sel: State['selection']) {

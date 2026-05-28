@@ -44,3 +44,23 @@ export interface ChatMsg {
   content: string
   refs?: ChatRef[]
 }
+
+export interface GraphNode {
+  key: string
+  name?: string | null
+  kind?: string | null
+  file?: string | null
+  line?: number | null
+}
+
+export interface GraphEdge {
+  src: string
+  dst: string
+  type?: string | null
+  confidence?: number | null
+}
+
+export interface Subgraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
