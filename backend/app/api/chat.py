@@ -18,7 +18,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(404, "仓库不存在")
 
     # 有选中代码:围绕选中片段(仍补充检索结果);无选中:全库检索
-    hits = await retriever.search(req.repo_id, req.message)
+    hits = await retriever.search(req.repo_id, req.message, languages=req.languages)
 
     messages = prompts.build_messages(
         question=req.message,

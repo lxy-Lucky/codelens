@@ -79,6 +79,8 @@ class ChatRequest(BaseModel):
     selected_code: Optional[str] = None
     selected_file: Optional[str] = None
     selected_range: Optional[tuple[int, int]] = None
+    # 复用语义检索框选中的语言过滤(空=不限)
+    languages: list[str] = Field(default_factory=list)
 
 
 TreeNode.model_rebuild()
