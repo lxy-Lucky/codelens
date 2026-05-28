@@ -56,14 +56,13 @@ export const useApp = defineStore('app', {
   actions: {
     // ─── 持久化 ───
     persist() {
+      // 不保存:searchQuery(检索词)、searchHits(检索结果)——刷新后置空
       const snapshot = {
         currentRepoId: this.currentRepoId,
         workMode: this.workMode,
         mainTab: this.mainTab,
         openFilePath: this.openFile?.path ?? null,
-        searchQuery: this.searchQuery,
         searchLanguages: this.searchLanguages,
-        searchHits: this.searchHits,
         searchHistory: this.searchHistory,
         chatMessages: this.chatMessages,
       }
@@ -81,12 +80,11 @@ export const useApp = defineStore('app', {
         this.currentRepoId = s.currentRepoId ?? null
         this.workMode = s.workMode ?? 'search'
         this.mainTab = s.mainTab ?? 'results'
-        this.searchQuery = s.searchQuery ?? ''
         this.searchLanguages = s.searchLanguages ?? []
-        this.searchHits = s.searchHits ?? []
         this.searchHistory = s.searchHistory ?? []
         this.chatMessages = s.chatMessages ?? []
         this._restoreFilePath = s.openFilePath ?? null
+        // searchQuery / searchHits 不恢复
       } catch {
         /* 损坏的快照忽略 */
       }
@@ -101,12 +99,14 @@ export const useApp = defineStore('app', {
         this.tree = []
         this.openFile = null
       }
+      const savedTab = this.mainTab
       if (this.currentRepoId) {
         const repo = this.repos.find((r) => r.id === this.currentRepoId)
         if (repo?.status === 'ready') {
           this.tree = await api.fileTree(this.currentRepoId)
           if (this._restoreFilePath) {
             await this.openFileByPath(this._restoreFilePath)
+            this.mainTab = savedTab // openFileByPath 会切到 code,这里恢复刷新前的 tab
           }
         }
       }

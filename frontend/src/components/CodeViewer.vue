@@ -92,14 +92,13 @@ watch(
   () => applyHighlight(),
 )
 
-// Ctrl/Cmd+F:代码 tab 激活时用 Monaco 内置查找,拦截浏览器查找
+// Ctrl/Cmd+F:仅当焦点在编辑器内时用 Monaco 内置查找;其他位置保持浏览器查找
 function onKeydown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && app.mainTab === 'code') {
-    e.preventDefault()
-    e.stopPropagation()
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
     const ed = editor.value
-    if (ed) {
-      ed.focus()
+    if (ed && el.value && el.value.contains(document.activeElement)) {
+      e.preventDefault()
+      e.stopPropagation()
       ed.getAction('actions.find')?.run()
     }
   }
