@@ -43,21 +43,27 @@ def invalidate(repo_id: str) -> None:
         _cache.pop(repo_id, None)
 
 
-def search(repo_id: str, query: str, limit: int) -> list[dict]:
-    """返回 [{id, score, payload}],按 BM25 分降序。"""
+def search(repo_id: str, query: str, limit: int, languages: list[str] | None = None) -> list[dict]:
+    """返回 [{id, score, payload}],按 BM25 分降序。languages 非空时按语言过滤。"""
     entry = _get(repo_id)
     if not entry or entry["bm25"] is None:
         return []
     tokens = tokenize(query)
     if not tokens:
         return []
+    lang_set = set(languages) if languages else None
     scores = entry["bm25"].get_scores(tokens)
-    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:limit]
+    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
     out = []
     for i in ranked:
         if scores[i] <= 0:
             continue
-        p = dict(entry["payloads"][i])
+        payload = entry["payloads"][i]
+        if lang_set and payload.get("language") not in lang_set:
+            continue
+        p = dict(payload)
         p["_chunk_id"] = entry["ids"][i]
         out.append({"id": entry["ids"][i], "score": float(scores[i]), "payload": p})
+        if len(out) >= limit:
+            break
     return out

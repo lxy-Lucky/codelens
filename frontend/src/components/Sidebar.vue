@@ -1,11 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import FileTree from './FileTree.vue'
 import { useApp } from '../stores/app'
-import type { WorkMode } from '../api/types'
+import type { TreeNode, WorkMode } from '../api/types'
 
 const app = useApp()
 const dropdownOpen = ref(false)
+const treeFilter = ref('')
+
+// 扁平化所有文件,供过滤定位
+const flatFiles = computed(() => {
+  const out: { name: string; path: string }[] = []
+  const walk = (nodes: TreeNode[]) => {
+    for (const n of nodes) {
+      if (n.type === 'file') out.push({ name: n.name, path: n.path })
+      else if (n.children) walk(n.children)
+    }
+  }
+  walk(app.tree)
+  return out
+})
+
+const filteredFiles = computed(() => {
+  const q = treeFilter.value.trim().toLowerCase()
+  if (!q) return []
+  return flatFiles.value.filter((f) => f.path.toLowerCase().includes(q)).slice(0, 200)
+})
 
 const modes: { key: WorkMode; icon: string; label: string }[] = [
   { key: 'search', icon: '🔍', label: '语义检索' },
@@ -100,16 +120,40 @@ async function removeRepo(id: string, e: MouseEvent) {
     <div class="h-px bg-border-subtle mx-3.5 my-1.5" />
 
     <!-- Repo tree -->
-    <div class="px-3.5 pt-1.5 pb-1">
-      <div class="text-[0.65rem] font-semibold uppercase tracking-wider text-txt-tertiary">
+    <div class="px-3.5 pt-1.5 pb-1.5">
+      <div class="text-[0.65rem] font-semibold uppercase tracking-wider text-txt-tertiary mb-1.5">
         仓库结构
       </div>
+      <input
+        v-model="treeFilter"
+        placeholder="输入文件名定位…"
+        class="w-full px-2.5 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-[0.72rem] outline-none focus:border-accent"
+      />
     </div>
     <div class="flex-1 overflow-y-auto px-2 pb-3">
-      <FileTree v-if="app.tree.length" :nodes="app.tree" />
-      <div v-else class="px-2 py-3 text-[0.72rem] text-txt-tertiary">
-        {{ app.currentRepo?.status === 'ready' ? '空' : '仓库未就绪 / 未索引' }}
-      </div>
+      <!-- 过滤模式:扁平结果 -->
+      <template v-if="treeFilter.trim()">
+        <div
+          v-for="f in filteredFiles"
+          :key="f.path"
+          class="flex items-center gap-1.5 py-1 px-2 rounded cursor-pointer text-[0.74rem] text-txt-secondary hover:bg-bg-hover hover:text-txt-primary"
+          :class="{ 'text-accent bg-accent/10': app.openFile?.path === f.path }"
+          :title="f.path"
+          @click="app.openFileByPath(f.path)"
+        >
+          <span>📄</span>
+          <span class="truncate">{{ f.name }}</span>
+          <span class="ml-auto text-[0.6rem] text-txt-tertiary truncate max-w-[90px]">{{ f.path }}</span>
+        </div>
+        <div v-if="!filteredFiles.length" class="px-2 py-3 text-[0.72rem] text-txt-tertiary">无匹配文件</div>
+      </template>
+      <!-- 正常树 -->
+      <template v-else>
+        <FileTree v-if="app.tree.length" :nodes="app.tree" />
+        <div v-else class="px-2 py-3 text-[0.72rem] text-txt-tertiary">
+          {{ app.currentRepo?.status === 'ready' ? '空' : '仓库未就绪 / 未索引' }}
+        </div>
+      </template>
     </div>
   </aside>
 </template>

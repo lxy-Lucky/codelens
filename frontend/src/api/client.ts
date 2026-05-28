@@ -15,9 +15,9 @@ export const api = {
         params: { path },
       })
       .then((r) => r.data),
-  search: (repo_id: string, query: string) =>
+  search: (repo_id: string, query: string, languages: string[] = []) =>
     http
-      .post<{ query: string; hits: CodeChunkHit[] }>('/api/search', { repo_id, query })
+      .post<{ query: string; hits: CodeChunkHit[] }>('/api/search', { repo_id, query, languages })
       .then((r) => r.data),
   buildGraph: (id: string) => http.post(`/api/graph/${id}/build`).then((r) => r.data),
   mermaid: (id: string, symbol_key: string, hops = 1) =>

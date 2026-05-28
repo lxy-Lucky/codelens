@@ -12,7 +12,12 @@ import { useApp } from '../stores/app'
 
 ;(self as any).MonacoEnvironment = { getWorker: () => new editorWorker() }
 
-const props = defineProps<{ content: string; language?: string | null; path: string }>()
+const props = defineProps<{
+  content: string
+  language?: string | null
+  path: string
+  highlight?: [number, number] | null
+}>()
 const app = useApp()
 const el = ref<HTMLElement | null>(null)
 const editor = shallowRef<monaco.editor.IStandaloneCodeEditor | null>(null)
@@ -28,6 +33,20 @@ const LANG_MAP: Record<string, string> = {
 
 function monacoLang(l?: string | null) {
   return l ? (LANG_MAP[l] ?? 'plaintext') : 'plaintext'
+}
+
+function applyHighlight() {
+  const ed = editor.value
+  const h = props.highlight
+  if (!ed || !h) return
+  const model = ed.getModel()
+  if (!model) return
+  const last = model.getLineCount()
+  const start = Math.min(h[0], last)
+  const end = Math.min(h[1], last)
+  const range = new monaco.Range(start, 1, end, model.getLineMaxColumn(end))
+  ed.setSelection(range)
+  ed.revealRangeInCenter(range)
 }
 
 onMounted(() => {
@@ -53,6 +72,7 @@ onMounted(() => {
       app.setSelection(null)
     }
   })
+  applyHighlight()
 })
 
 watch(
@@ -62,7 +82,14 @@ watch(
     if (!ed) return
     ed.setValue(props.content)
     monaco.editor.setModelLanguage(ed.getModel()!, monacoLang(props.language))
+    applyHighlight()
   },
+)
+
+// 同一文件内点击不同检索结果:仅 highlight 变化也要重新选中
+watch(
+  () => props.highlight,
+  () => applyHighlight(),
 )
 
 onBeforeUnmount(() => editor.value?.dispose())

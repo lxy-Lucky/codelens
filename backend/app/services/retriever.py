@@ -49,10 +49,12 @@ def _rrf_fuse(vector_hits: list[dict], bm25_hits: list[dict]) -> list[dict]:
     return [payloads[c] for c in order[:FUSION_CANDIDATES]]
 
 
-def _search_sync(repo_id: str, query: str, top_n: int) -> list[CodeChunkHit]:
+def _search_sync(
+    repo_id: str, query: str, top_n: int, languages: list[str] | None = None
+) -> list[CodeChunkHit]:
     qvec = embedding.embed_query(query)
-    vector_hits = qdrant_store.search(repo_id, qvec, settings.retrieval_top_k)
-    bm25_hits = bm25_store.search(repo_id, query, settings.retrieval_top_k)
+    vector_hits = qdrant_store.search(repo_id, qvec, settings.retrieval_top_k, languages)
+    bm25_hits = bm25_store.search(repo_id, query, settings.retrieval_top_k, languages)
 
     fused = _rrf_fuse(vector_hits, bm25_hits)
     if not fused:
@@ -72,6 +74,8 @@ def _search_sync(repo_id: str, query: str, top_n: int) -> list[CodeChunkHit]:
     return [_to_hit(p, s) for s, p in scored[:top_n]]
 
 
-async def search(repo_id: str, query: str, top_n: int | None = None) -> list[CodeChunkHit]:
+async def search(
+    repo_id: str, query: str, top_n: int | None = None, languages: list[str] | None = None
+) -> list[CodeChunkHit]:
     n = top_n or settings.rerank_top_n
-    return await asyncio.to_thread(_search_sync, repo_id, query, n)
+    return await asyncio.to_thread(_search_sync, repo_id, query, n, languages)

@@ -13,9 +13,11 @@ const leftWidth = ref(248)
 const rightWidth = ref(384)
 const leftCollapsed = ref(false)
 const showIndexModal = ref(false)
+const dragging = ref(false)
 
 function startDrag(side: 'left' | 'right', e: MouseEvent) {
   e.preventDefault()
+  dragging.value = true
   const startX = e.clientX
   const startLeft = leftWidth.value
   const startRight = rightWidth.value
@@ -25,6 +27,7 @@ function startDrag(side: 'left' | 'right', e: MouseEvent) {
     else rightWidth.value = Math.min(640, Math.max(280, startRight - dx))
   }
   const up = () => {
+    dragging.value = false
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
   }
@@ -32,7 +35,7 @@ function startDrag(side: 'left' | 'right', e: MouseEvent) {
   window.addEventListener('mouseup', up)
 }
 
-onMounted(() => app.loadRepos())
+onMounted(() => app.init())
 </script>
 
 <template>
@@ -40,14 +43,14 @@ onMounted(() => app.loadRepos())
     <TopBar @collapse="leftCollapsed = !leftCollapsed" @index="showIndexModal = true" />
     <div class="flex flex-1 min-h-0">
       <div
-        v-if="!leftCollapsed"
-        :style="{ width: leftWidth + 'px' }"
-        class="shrink-0 min-w-0"
+        :style="{ width: (leftCollapsed ? 0 : leftWidth) + 'px' }"
+        class="shrink-0 min-w-0 overflow-hidden"
+        :class="dragging ? '' : 'transition-[width] duration-300 ease-in-out'"
       >
         <Sidebar />
       </div>
       <div
-        v-if="!leftCollapsed"
+        v-show="!leftCollapsed"
         class="w-1 cursor-col-resize hover:bg-accent/40 shrink-0"
         @mousedown="startDrag('left', $event)"
       />

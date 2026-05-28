@@ -3,20 +3,14 @@ import { nextTick, ref } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { streamSSE } from '../api/client'
-import type { ChatRef } from '../api/types'
+import type { ChatMsg, ChatRef } from '../api/types'
 import { useApp } from '../stores/app'
-
-interface Msg {
-  role: 'user' | 'assistant'
-  content: string
-  refs?: ChatRef[]
-}
 
 const app = useApp()
 const input = ref('')
-const messages = ref<Msg[]>([])
 const streaming = ref(false)
 const listEl = ref<HTMLElement | null>(null)
+const showHistory = ref(false)
 let abort: AbortController | null = null
 
 function render(md: string): string {
@@ -33,10 +27,10 @@ async function send() {
   if (!text || streaming.value || !app.currentRepoId) return
   input.value = ''
 
-  const history = messages.value.map((m) => ({ role: m.role, content: m.content }))
-  messages.value.push({ role: 'user', content: text })
-  const ai: Msg = { role: 'assistant', content: '', refs: [] }
-  messages.value.push(ai)
+  const history = app.chatMessages.map((m) => ({ role: m.role, content: m.content }))
+  app.chatMessages.push({ role: 'user', content: text })
+  const ai: ChatMsg = { role: 'assistant', content: '', refs: [] }
+  app.chatMessages.push(ai)
   streaming.value = true
   scrollDown()
 
@@ -75,11 +69,21 @@ function stop() {
 }
 
 function clearChat() {
-  messages.value = []
+  app.chatMessages = []
 }
 
 function openRef(r: ChatRef) {
-  app.openFileByPath(r.file)
+  app.openFileByPath(r.file, [r.start_line, r.end_line])
+}
+
+function rerunSearch(q: string) {
+  showHistory.value = false
+  app.runSearch(q)
+}
+
+// 流式中且当前助手消息还没内容 → 显示打字动效
+function isTyping(m: ChatMsg, idx: number): boolean {
+  return streaming.value && idx === app.chatMessages.length - 1 && m.role === 'assistant' && !m.content
 }
 </script>
 
@@ -87,14 +91,45 @@ function openRef(r: ChatRef) {
   <aside class="h-full flex flex-col bg-bg-secondary border-l border-border-subtle overflow-hidden">
     <div class="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
       <div class="font-semibold text-[0.84rem] flex items-center gap-2">💬 代码助手</div>
-      <button class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover" title="清空" @click="clearChat">🗑</button>
+      <div class="flex items-center gap-1 relative">
+        <button
+          class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover"
+          title="检索历史"
+          @click="showHistory = !showHistory"
+        >
+          🕘
+        </button>
+        <button class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover" title="清空对话" @click="clearChat">🗑</button>
+
+        <!-- 检索历史下拉 -->
+        <div
+          v-if="showHistory"
+          class="absolute right-0 top-9 w-64 max-h-72 overflow-y-auto bg-bg-elevated border border-border-medium rounded-lg shadow-lg z-50 py-1"
+        >
+          <div class="px-3 py-1.5 text-[0.62rem] uppercase tracking-wider text-txt-tertiary">语义检索历史</div>
+          <div v-if="!app.searchHistory.length" class="px-3 py-2 text-[0.72rem] text-txt-tertiary">暂无历史</div>
+          <div
+            v-for="(q, i) in app.searchHistory"
+            :key="i"
+            class="group flex items-center gap-2 px-3 py-1.5 hover:bg-bg-hover cursor-default"
+          >
+            <span class="flex-1 truncate text-[0.74rem] text-txt-secondary">{{ q }}</span>
+            <button
+              class="opacity-0 group-hover:opacity-100 text-[0.64rem] px-1.5 py-0.5 rounded border border-border-subtle text-accent hover:bg-accent/10 whitespace-nowrap"
+              @click="rerunSearch(q)"
+            >
+              重新执行
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div ref="listEl" class="flex-1 overflow-y-auto p-4 space-y-3.5">
-      <div v-if="!messages.length" class="text-[0.78rem] text-txt-secondary leading-relaxed">
+      <div v-if="!app.chatMessages.length" class="text-[0.78rem] text-txt-secondary leading-relaxed">
         用自然语言提问。<strong class="text-txt-primary">在编辑器里选中代码</strong>后提问,会针对选中片段;不选则基于整个代码库。
       </div>
-      <div v-for="(m, i) in messages" :key="i" class="flex gap-2.5" :class="m.role === 'user' ? 'flex-row-reverse' : ''">
+      <div v-for="(m, i) in app.chatMessages" :key="i" class="flex gap-2.5" :class="m.role === 'user' ? 'flex-row-reverse' : ''">
         <div
           class="w-7 h-7 rounded-md grid place-items-center text-[0.7rem] font-semibold shrink-0"
           :class="m.role === 'user' ? 'bg-info/15 text-info' : 'bg-accent/10 text-accent border border-accent/20'"
@@ -106,7 +141,13 @@ function openRef(r: ChatRef) {
             class="px-3.5 py-2.5 rounded-lg text-[0.78rem] leading-relaxed"
             :class="m.role === 'user' ? 'bg-accent/10 text-txt-primary' : 'bg-bg-tertiary border border-border-subtle text-txt-secondary'"
           >
-            <div v-if="m.role === 'assistant'" class="md" v-html="render(m.content || '…')" />
+            <!-- 打字动效 -->
+            <div v-if="isTyping(m, i)" class="flex gap-1 py-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-txt-tertiary animate-bounce" style="animation-delay:0ms" />
+              <span class="w-1.5 h-1.5 rounded-full bg-txt-tertiary animate-bounce" style="animation-delay:150ms" />
+              <span class="w-1.5 h-1.5 rounded-full bg-txt-tertiary animate-bounce" style="animation-delay:300ms" />
+            </div>
+            <div v-else-if="m.role === 'assistant'" class="md" v-html="render(m.content)" />
             <template v-else>{{ m.content }}</template>
           </div>
           <div v-if="m.refs && m.refs.length" class="mt-1.5 space-y-1">

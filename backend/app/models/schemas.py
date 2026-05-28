@@ -45,6 +45,7 @@ class SearchRequest(BaseModel):
     repo_id: str
     query: str
     top_n: Optional[int] = None
+    languages: list[str] = Field(default_factory=list)  # 空=不限语言
 
 
 class CodeChunkHit(BaseModel):

@@ -38,3 +38,9 @@ export interface ChatRef {
 }
 
 export type WorkMode = 'search' | 'analysis' | 'flow' | 'docs'
+
+export interface ChatMsg {
+  role: 'user' | 'assistant'
+  content: string
+  refs?: ChatRef[]
+}

@@ -23,6 +23,7 @@ def ensure_collection(dim: int) -> None:
             vectors_config=qm.VectorParams(size=dim, distance=qm.Distance.COSINE),
         )
         c.create_payload_index(COLLECTION, "repo_id", qm.PayloadSchemaType.KEYWORD)
+        c.create_payload_index(COLLECTION, "language", qm.PayloadSchemaType.KEYWORD)
 
 
 def upsert_chunks(points: list[dict]) -> None:
@@ -73,14 +74,17 @@ def scroll_repo(repo_id: str) -> list[dict]:
     return out
 
 
-def search(repo_id: str, query_vector: list[float], limit: int) -> list[dict]:
+def search(
+    repo_id: str, query_vector: list[float], limit: int, languages: list[str] | None = None
+) -> list[dict]:
+    must = [qm.FieldCondition(key="repo_id", match=qm.MatchValue(value=repo_id))]
+    if languages:
+        must.append(qm.FieldCondition(key="language", match=qm.MatchAny(any=languages)))
     res = client().query_points(
         collection_name=COLLECTION,
         query=query_vector,
         limit=limit,
-        query_filter=qm.Filter(
-            must=[qm.FieldCondition(key="repo_id", match=qm.MatchValue(value=repo_id))]
-        ),
+        query_filter=qm.Filter(must=must),
         with_payload=True,
     ).points
     return [{"id": str(p.id), "score": p.score, "payload": p.payload} for p in res]
