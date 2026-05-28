@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeLens — 代码库智能检索与分析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-primary:#0e0f11;--bg-secondary:#16171b;--bg-tertiary:#1c1d22;--bg-elevated:#222329;--bg-hover:#292a31;
+  --surface:#2a2b33;--border-subtle:#2e2f37;--border-medium:#3a3b44;
+  --text-primary:#e8e6e1;--text-secondary:#9d9a93;--text-tertiary:#6b6860;
+  --accent:#d4a574;--accent-dim:#b8895c;--accent-glow:rgba(212,165,116,0.12);--accent-surface:rgba(212,165,116,0.06);
+  --success:#7cb87c;--success-dim:rgba(124,184,124,0.15);
+  --warning:#d4a574;--warning-dim:rgba(212,165,116,0.15);
+  --error:#c47070;--error-dim:rgba(196,112,112,0.15);
+  --info:#709cc4;--info-dim:rgba(112,156,196,0.15);
+  --code-bg:#131416;--code-line-hover:rgba(212,165,116,0.04);--code-highlight:rgba(212,165,116,0.08);
+  --scrollbar-thumb:#3a3b44;
+  --font-display:'DM Serif Display',Georgia,serif;
+  --font-body:'IBM Plex Sans',-apple-system,sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+  --radius-sm:6px;--radius-md:10px;--radius-lg:14px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.3);--shadow-md:0 4px 16px rgba(0,0,0,0.4);--shadow-lg:0 8px 32px rgba(0,0,0,0.5);
+  --transition-fast:120ms ease-out;--transition-normal:220ms cubic-bezier(0.25,0.1,0.25,1);--transition-slow:400ms cubic-bezier(0.16,1,0.3,1);
+}
+html{font-size:15px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow:hidden;height:100vh}
+::selection{background:rgba(212,165,116,0.25)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#4a4b54}
+
+.app{display:grid;grid-template-columns:240px 1fr 380px;grid-template-rows:52px 1fr;height:100vh;gap:0}
+
+/* ─── Top Bar ─── */
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--bg-secondary);border-bottom:1px solid var(--border-subtle);z-index:100}
+.topbar-brand{display:flex;align-items:center;gap:10px}
+.topbar-logo{width:26px;height:26px;background:var(--accent);border-radius:6px;display:grid;place-items:center;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--bg-primary)}
+.topbar-title{font-family:var(--font-display);font-size:1.08rem;color:var(--text-primary)}
+.topbar-subtitle{font-size:0.7rem;color:var(--text-tertiary);margin-left:8px;padding-left:8px;border-left:1px solid var(--border-subtle)}
+.topbar-actions{display:flex;align-items:center;gap:6px}
+.topbar-btn{display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:transparent;color:var(--text-secondary);font-family:var(--font-body);font-size:0.74rem;cursor:pointer;transition:all var(--transition-fast)}
+.topbar-btn:hover{border-color:var(--border-medium);color:var(--text-primary);background:var(--bg-tertiary)}
+.topbar-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg-primary);font-weight:500}
+.topbar-btn.primary:hover{background:var(--accent-dim);border-color:var(--accent-dim)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px rgba(124,184,124,0.5);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
+/* ─── Sidebar ─── */
+.sidebar{background:var(--bg-secondary);border-right:1px solid var(--border-subtle);overflow-y:auto;display:flex;flex-direction:column}
+.sidebar-section{padding:14px 14px 6px}
+.sidebar-label{font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-tertiary);margin-bottom:8px;padding-left:2px}
+.repo-selector{display:flex;align-items:center;gap:9px;padding:9px 11px;margin:10px 10px 0;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);position:relative}
+.repo-selector:hover{border-color:var(--border-medium)}
+.repo-selector.open{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.repo-icon{width:30px;height:30px;background:var(--accent-surface);border:1px solid rgba(212,165,116,0.15);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.repo-name{font-weight:600;font-size:0.82rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.repo-meta{font-size:0.67rem;color:var(--text-tertiary);margin-top:1px}
+.repo-chevron{margin-left:auto;color:var(--text-tertiary);font-size:0.67rem;transition:transform var(--transition-fast)}
+.repo-selector.open .repo-chevron{transform:rotate(180deg)}
+.repo-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);z-index:200;display:none;overflow:hidden}
+.repo-dropdown.show{display:block}
+.repo-dropdown-item{display:flex;align-items:center;gap:9px;padding:9px 11px;cursor:pointer;transition:background var(--transition-fast);font-size:0.78rem;color:var(--text-secondary)}
+.repo-dropdown-item:hover{background:var(--bg-hover);color:var(--text-primary)}
+.repo-dropdown-item.selected{color:var(--accent);background:var(--accent-surface)}
+.repo-dropdown-item .rdi-icon{font-size:13px;width:22px;text-align:center}
+.repo-dropdown-item .rdi-info{flex:1}
+.repo-dropdown-item .rdi-name{font-weight:500;font-size:0.78rem}
+.repo-dropdown-item .rdi-meta{font-size:0.65rem;color:var(--text-tertiary)}
+.repo-dropdown-item .rdi-check{color:var(--accent);font-size:0.75rem;opacity:0}
+.repo-dropdown-item.selected .rdi-check{opacity:1}
+
+.nav-list{list-style:none;padding:3px 7px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:var(--radius-sm);cursor:pointer;transition:all var(--transition-fast);font-size:0.78rem;color:var(--text-secondary);position:relative}
+.nav-item:hover{background:var(--bg-hover);color:var(--text-primary)}
+.nav-item.active{background:var(--accent-surface);color:var(--accent)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:15px;background:var(--accent);border-radius:0 2px 2px 0}
+.nav-icon{font-size:0.95rem;width:18px;text-align:center;flex-shrink:0}
+.nav-badge{margin-left:auto;font-size:0.62rem;font-weight:600;padding:2px 6px;border-radius:10px;background:var(--bg-elevated);color:var(--text-tertiary)}
+.nav-item.active .nav-badge{background:rgba(212,165,116,0.15);color:var(--accent)}
+.sidebar-divider{height:1px;background:var(--border-subtle);margin:6px 14px}
+.module-tree{padding:0 7px;flex:1;overflow-y:auto}
+.module-item{display:flex;align-items:center;gap:7px;padding:5px 11px;border-radius:var(--radius-sm);cursor:pointer;transition:all var(--transition-fast);font-size:0.74rem;color:var(--text-secondary)}
+.module-item:hover{background:var(--bg-hover);color:var(--text-primary)}
+.module-item.active{color:var(--accent);background:var(--accent-surface)}
+.module-indent{width:14px;flex-shrink:0}
+.module-icon{font-size:0.8rem;width:16px;text-align:center;flex-shrink:0;color:var(--text-tertiary)}
+.module-item.active .module-icon{color:var(--accent)}
+.sidebar-stats{padding:10px 14px;margin-top:auto;border-top:1px solid var(--border-subtle);display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stat-item{text-align:center;padding:5px 0}
+.stat-value{font-family:var(--font-mono);font-size:0.92rem;font-weight:600;color:var(--text-primary)}
+.stat-label{font-size:0.62rem;color:var(--text-tertiary);margin-top:2px}
+
+/* ─── Main ─── */
+.main{display:flex;flex-direction:column;overflow:hidden;background:var(--bg-primary)}
+
+.content-tabs{display:flex;padding:0 24px;border-bottom:1px solid var(--border-subtle);background:var(--bg-primary);gap:0;flex-shrink:0}
+.content-tab{padding:9px 16px;font-size:0.76rem;font-weight:500;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;transition:all var(--transition-fast);position:relative;top:1px}
+.content-tab:hover{color:var(--text-secondary)}
+.content-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-count{font-size:0.62rem;font-weight:600;margin-left:4px;padding:1px 5px;border-radius:8px;background:var(--bg-elevated);color:var(--text-tertiary)}
+.content-tab.active .tab-count{background:rgba(212,165,116,0.12);color:var(--accent)}
+
+.results-area{flex:1;overflow-y:auto;padding:0}
+.result-group{border-bottom:1px solid var(--border-subtle)}
+.result-group.collapsed .result-group-body{display:none}
+.result-group-header{display:flex;align-items:center;gap:9px;padding:11px 24px;background:var(--bg-secondary);cursor:pointer;transition:background var(--transition-fast);position:sticky;top:0;z-index:10;user-select:none}
+.result-group-header:hover{background:var(--bg-tertiary)}
+.result-group-toggle{font-size:0.62rem;color:var(--text-tertiary);transition:transform var(--transition-fast);width:12px;text-align:center}
+.result-group.collapsed .result-group-toggle{transform:rotate(-90deg)}
+.result-group-icon{font-size:0.95rem;color:var(--accent)}
+.result-group-path{font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary)}
+.result-group-name{font-weight:600;font-size:0.78rem;color:var(--text-primary)}
+.result-group-badge{margin-left:auto;font-size:0.65rem;padding:2px 7px;border-radius:10px;font-weight:500}
+.badge-relevant{background:var(--success-dim);color:var(--success)}
+.badge-warning{background:var(--warning-dim);color:var(--warning)}
+.badge-error{background:var(--error-dim);color:var(--error)}
+.badge-info{background:var(--info-dim);color:var(--info)}
+
+.result-item{padding:14px 24px 14px 44px;cursor:pointer;transition:background var(--transition-fast);border-bottom:1px solid var(--border-subtle)}
+.result-item:last-child{border-bottom:none}
+.result-item:hover{background:var(--code-line-hover)}
+.result-item.active{background:var(--code-highlight);border-left:3px solid var(--accent)}
+.result-item-header{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.result-item-type{font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 7px;border-radius:4px}
+.type-function{background:var(--info-dim);color:var(--info)}
+.type-class{background:var(--success-dim);color:var(--success)}
+.type-route{background:var(--warning-dim);color:var(--warning)}
+.type-bug{background:var(--error-dim);color:var(--error)}
+.result-item-name{font-family:var(--font-mono);font-size:0.78rem;font-weight:500;color:var(--text-primary)}
+.result-item-line{font-size:0.67rem;color:var(--text-tertiary);margin-left:auto}
+.result-item-desc{font-size:0.74rem;color:var(--text-secondary);line-height:1.5;margin-bottom:7px}
+.result-item-code{background:var(--code-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:9px 12px;font-family:var(--font-mono);font-size:0.72rem;line-height:1.7;color:var(--text-secondary);overflow-x:auto;white-space:pre}
+.result-item-code .keyword{color:#c4a0e0}
+.result-item-code .string{color:#a8c47a}
+.result-item-code .func{color:#74b8d4}
+.result-item-code .comment{color:#5a5850;font-style:italic}
+.result-item-code .highlight-line{background:var(--code-highlight);display:block;margin:0 -12px;padding:0 12px}
+.result-item-footer{display:flex;align-items:center;gap:10px;margin-top:7px}
+.result-action{font-size:0.69rem;color:var(--text-tertiary);cursor:pointer;transition:color var(--transition-fast);display:flex;align-items:center;gap:3px;background:none;border:none;font-family:var(--font-body);padding:0}
+.result-action:hover{color:var(--accent)}
+
+/* ─── Chat Panel (Right Sidebar) ─── */
+.chat-panel{background:var(--bg-secondary);border-left:1px solid var(--border-subtle);display:flex;flex-direction:column;overflow:hidden}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-subtle);flex-shrink:0}
+.chat-title{font-weight:600;font-size:0.84rem;color:var(--text-primary);display:flex;align-items:center;gap:7px}
+.chat-header-actions{display:flex;gap:4px}
+.chat-header-btn{width:28px;height:28px;display:grid;place-items:center;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-tertiary);cursor:pointer;transition:all var(--transition-fast);font-size:0.85rem}
+.chat-header-btn:hover{background:var(--bg-hover);color:var(--text-primary)}
+
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+
+.msg{display:flex;gap:10px;max-width:95%;animation:msgIn 0.3s cubic-bezier(0.16,1,0.3,1) both}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg-avatar{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;font-size:0.75rem;flex-shrink:0;font-weight:600}
+.msg.ai .msg-avatar{background:var(--accent-surface);border:1px solid rgba(212,165,116,0.15);color:var(--accent)}
+.msg.user .msg-avatar{background:var(--info-dim);color:var(--info)}
+.msg-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+.msg-name{font-size:0.65rem;font-weight:600;color:var(--text-tertiary)}
+.msg.user .msg-name{text-align:right}
+.msg-bubble{padding:10px 14px;border-radius:var(--radius-md);font-size:0.78rem;line-height:1.6;color:var(--text-secondary)}
+.msg.ai .msg-bubble{background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-top-left-radius:2px}
+.msg.user .msg-bubble{background:var(--accent-surface);border:1px solid rgba(212,165,116,0.12);border-top-right-radius:2px;color:var(--text-primary)}
+.msg-bubble strong{color:var(--text-primary);font-weight:500}
+.msg-bubble code{font-family:var(--font-mono);font-size:0.72rem;background:var(--code-bg);padding:1px 5px;border-radius:3px;color:var(--accent)}
+.msg-time{font-size:0.6rem;color:var(--text-tertiary);margin-top:2px}
+.msg.user .msg-time{text-align:right}
+
+.msg-attachments{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.msg-file{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);cursor:pointer;transition:all var(--transition-fast)}
+.msg-file:hover{border-color:var(--accent);background:var(--accent-surface)}
+.msg-file-icon{font-size:0.85rem}
+.msg-file-info{flex:1;min-width:0}
+.msg-file-name{font-family:var(--font-mono);font-size:0.72rem;font-weight:500;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg-file-meta{font-size:0.62rem;color:var(--text-tertiary)}
+.msg-file-action{font-size:0.65rem;color:var(--text-tertiary);cursor:pointer}
+.msg-file-action:hover{color:var(--accent)}
+
+.msg-code-block{margin-top:6px;background:var(--code-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);overflow:hidden}
+.msg-code-header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--bg-tertiary);border-bottom:1px solid var(--border-subtle)}
+.msg-code-lang{font-size:0.62rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em}
+.msg-code-copy{font-size:0.62rem;color:var(--text-tertiary);cursor:pointer;background:none;border:none;font-family:var(--font-body);padding:2px 6px;border-radius:3px;transition:all var(--transition-fast)}
+.msg-code-copy:hover{color:var(--accent);background:var(--accent-surface)}
+.msg-code-content{padding:10px 12px;font-family:var(--font-mono);font-size:0.72rem;line-height:1.7;color:var(--text-secondary);overflow-x:auto;white-space:pre}
+.msg-code-content .kw{color:#c4a0e0}
+.msg-code-content .str{color:#a8c47a}
+.msg-code-content .fn{color:#74b8d4}
+.msg-code-content .cmt{color:#5a5850;font-style:italic}
+.msg-code-content .hl{background:var(--code-highlight);display:block;margin:0 -12px;padding:0 12px}
+
+.msg-finding{margin-top:6px;padding:10px 12px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);border-left:3px solid var(--error);cursor:pointer;transition:border-color var(--transition-fast)}
+.msg-finding:hover{border-left-color:var(--accent)}
+.msg-finding-title{font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:3px}
+.msg-finding-desc{font-size:0.7rem;color:var(--text-secondary);line-height:1.5}
+
+.msg-metrics{display:flex;gap:8px;margin-top:6px}
+.msg-metric{flex:1;padding:8px 10px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);text-align:center}
+.msg-metric-val{font-family:var(--font-mono);font-size:0.95rem;font-weight:600;color:var(--text-primary)}
+.msg-metric-label{font-size:0.6rem;color:var(--text-tertiary);margin-top:1px}
+.msg-metric-val.good{color:var(--success)}
+.msg-metric-val.warn{color:var(--warning)}
+
+.msg-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.msg-action-btn{padding:4px 10px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);font-size:0.67rem;color:var(--text-secondary);cursor:pointer;transition:all var(--transition-fast);font-family:var(--font-body)}
+.msg-action-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-surface)}
+
+.msg-typing{display:flex;gap:4px;padding:4px 0}
+.typing-dot{width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:typing 1.2s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:0.15s}
+.typing-dot:nth-child(3){animation-delay:0.3s}
+@keyframes typing{0%,60%,100%{opacity:0.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.chat-suggestions{display:flex;gap:6px;padding:0 16px 10px;flex-wrap:wrap}
+.chat-suggest{padding:5px 12px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:16px;font-size:0.68rem;color:var(--text-secondary);cursor:pointer;transition:all var(--transition-fast);font-family:var(--font-body)}
+.chat-suggest:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-surface)}
+
+.chat-input-area{padding:12px 16px;border-top:1px solid var(--border-subtle);flex-shrink:0}
+.chat-input-row{display:flex;gap:8px;align-items:flex-end}
+.chat-input-wrap{flex:1;position:relative}
+.chat-textarea{width:100%;padding:10px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);color:var(--text-primary);font-family:var(--font-body);font-size:0.82rem;outline:none;resize:none;min-height:40px;max-height:120px;line-height:1.5;transition:border-color var(--transition-fast)}
+.chat-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.chat-textarea::placeholder{color:var(--text-tertiary)}
+.chat-send-btn{width:40px;height:40px;background:var(--accent);border:none;border-radius:var(--radius-md);color:var(--bg-primary);cursor:pointer;display:grid;place-items:center;font-size:1rem;transition:all var(--transition-fast);flex-shrink:0}
+.chat-send-btn:hover{background:var(--accent-dim)}
+.chat-send-btn:disabled{opacity:0.4;cursor:not-allowed}
+.chat-send-btn:active:not(:disabled){transform:scale(0.95)}
+.chat-input-hint{font-size:0.6rem;color:var(--text-tertiary);margin-top:5px;display:flex;align-items:center;gap:8px}
+.chat-input-hint kbd{padding:1px 5px;background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:3px;font-family:var(--font-mono);font-size:0.58rem}
+
+/* ─── Modal ─── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity var(--transition-normal)}
+.modal-overlay.show{opacity:1;pointer-events:all}
+.modal{background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:min(520px,90vw);max-height:80vh;display:flex;flex-direction:column;transform:translateY(16px) scale(0.97);transition:transform var(--transition-slow)}
+.modal-overlay.show .modal{transform:translateY(0) scale(1)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border-subtle)}
+.modal-title{font-family:var(--font-display);font-size:1.05rem;color:var(--text-primary)}
+.modal-close{width:30px;height:30px;display:grid;place-items:center;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-tertiary);cursor:pointer;font-size:0.95rem;transition:all var(--transition-fast)}
+.modal-close:hover{background:var(--bg-hover);color:var(--text-primary)}
+.modal-body{padding:22px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:8px}
+.modal-btn{padding:7px 18px;border-radius:var(--radius-sm);font-family:var(--font-body);font-size:0.78rem;cursor:pointer;transition:all var(--transition-fast);border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary)}
+.modal-btn:hover{border-color:var(--border-medium);color:var(--text-primary)}
+.modal-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg-primary);font-weight:500}
+.modal-btn.primary:hover{background:var(--accent-dim)}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:0.74rem;font-weight:500;color:var(--text-secondary);margin-bottom:5px}
+.form-input{width:100%;padding:9px 12px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-body);font-size:0.82rem;outline:none;transition:all var(--transition-fast)}
+.form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.form-input::placeholder{color:var(--text-tertiary)}
+.form-select{width:100%;padding:9px 12px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-body);font-size:0.82rem;outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%236b6860' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.form-select:focus{border-color:var(--accent)}
+.form-hint{font-size:0.68rem;color:var(--text-tertiary);margin-top:3px}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border-subtle)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-label{font-size:0.78rem;color:var(--text-secondary)}
+.toggle-switch{width:36px;height:20px;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;cursor:pointer;position:relative;transition:all var(--transition-fast)}
+.toggle-switch.on{background:var(--accent);border-color:var(--accent)}
+.toggle-switch::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--text-secondary);border-radius:50%;transition:all var(--transition-fast)}
+.toggle-switch.on::after{transform:translateX(16px);background:var(--bg-primary)}
+
+/* ─── Toast ─── */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:600;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{padding:10px 18px;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:var(--radius-md);box-shadow:var(--shadow-md);font-size:0.78rem;color:var(--text-primary);display:flex;align-items:center;gap:8px;pointer-events:all;transform:translateX(120%);transition:transform var(--transition-slow);max-width:320px}
+.toast.show{transform:translateX(0)}
+.toast-icon{font-size:0.95rem;flex-shrink:0}
+.toast.success{border-left:3px solid var(--success)}
+.toast.error{border-left:3px solid var(--error)}
+.toast.info{border-left:3px solid var(--info)}
+
+/* ─── Bug Detail Modal ─── */
+.bug-detail-code{background:var(--code-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:12px;font-family:var(--font-mono);font-size:0.75rem;line-height:1.7;margin-top:8px;color:var(--text-secondary)}
+
+/* ─── Empty state ─── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 30px;text-align:center}
+.empty-icon{font-size:2.2rem;margin-bottom:14px;opacity:0.6}
+.empty-title{font-family:var(--font-display);font-size:1.1rem;color:var(--text-primary);margin-bottom:6px}
+.empty-desc{font-size:0.78rem;color:var(--text-tertiary);max-width:280px;line-height:1.6}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.animate-in{animation:fadeUp 0.35s cubic-bezier(0.16,1,0.3,1) both}
+.delay-1{animation-delay:0.04s}.delay-2{animation-delay:0.08s}.delay-3{animation-delay:0.12s}.delay-4{animation-delay:0.16s}.delay-5{animation-delay:0.2s}
+
+@media(max-width:1200px){.app{grid-template-columns:200px 1fr 340px}}
+@media(max-width:960px){.app{grid-template-columns:1fr;grid-template-rows:52px auto 1fr}.sidebar,.chat-panel{display:none}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="topbar-logo">CL</div>
+      <span class="topbar-title">CodeLens</span>
+      <span class="topbar-subtitle">代码库智能检索与分析</span>
+    </div>
+    <div class="topbar-actions">
+      <div style="display:flex;align-items:center;gap:7px;margin-right:6px">
+        <div class="status-dot"></div>
+        <span style="font-size:0.68rem;color:var(--text-tertiary)">GPU 在线 · RTX 5070 Ti</span>
+      </div>
+      <button class="topbar-btn" onclick="openModal('settingsModal')">⚙ 设置</button>
+      <button class="topbar-btn primary" onclick="openModal('indexModal')">＋ 索引仓库</button>
+    </div>
+  </header>
+
+  <!-- Left Sidebar -->
+  <aside class="sidebar">
+    <div class="repo-selector" id="repoSelector" onclick="toggleRepoDropdown(event)">
+      <div class="repo-icon">📦</div>
+      <div><div class="repo-name" id="currentRepoName">user-service</div><div class="repo-meta" id="currentRepoMeta">Java · 2.4k 文件 · 186k 行</div></div>
+      <span class="repo-chevron">▾</span>
+      <div class="repo-dropdown" id="repoDropdown">
+        <div class="repo-dropdown-item selected" onclick="selectRepo(event,'user-service','Java · 2.4k 文件 · 186k 行',this)">📦 <div class="rdi-info"><div class="rdi-name">user-service</div><div class="rdi-meta">Java · 2.4k 文件 · 186k 行</div></div><span class="rdi-check">✓</span></div>
+        <div class="repo-dropdown-item" onclick="selectRepo(event,'order-service','Go · 1.8k 文件 · 142k 行',this)">📦 <div class="rdi-info"><div class="rdi-name">order-service</div><div class="rdi-meta">Go · 1.8k 文件 · 142k 行</div></div><span class="rdi-check">✓</span></div>
+        <div class="repo-dropdown-item" onclick="selectRepo(event,'payment-gateway','Python · 960 文件 · 78k 行',this)">📦 <div class="rdi-info"><div class="rdi-name">payment-gateway</div><div class="rdi-meta">Python · 960 文件 · 78k 行</div></div><span class="rdi-check">✓</span></div>
+        <div class="repo-dropdown-item" onclick="selectRepo(event,'frontend-app','TypeScript · 3.2k 文件 · 210k 行',this)">📦 <div class="rdi-info"><div class="rdi-name">frontend-app</div><div class="rdi-meta">TypeScript · 3.2k 文件 · 210k 行</div></div><span class="rdi-check">✓</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">工作模式</div>
+      <ul class="nav-list">
+        <li class="nav-item active" data-mode="search" onclick="switchMode(this)">🔍 <span>语义检索</span></li>
+        <li class="nav-item" data-mode="bug" onclick="switchMode(this)">🐛 <span>Bug 检测</span><span class="nav-badge">3</span></li>
+        <li class="nav-item" data-mode="analysis" onclick="switchMode(this)">📊 <span>代码分析</span></li>
+        <li class="nav-item" data-mode="flow" onclick="switchMode(this)">🗺️ <span>逻辑地图</span></li>
+        <li class="nav-item" data-mode="docs" onclick="switchMode(this)">📖 <span>文档生成</span></li>
+      </ul>
+    </div>
+
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section"><div class="sidebar-label">模块结构</div></div>
+    <div class="module-tree">
+      <div class="module-item active" onclick="selectModule(this,'auth')">📁 auth</div>
+      <div class="module-item" onclick="selectModule(this,'LoginController.java')"><span class="module-indent"></span><span class="module-icon">📄</span> LoginController.java</div>
+      <div class="module-item" onclick="selectModule(this,'AuthService.java')"><span class="module-indent"></span><span class="module-icon">📄</span> AuthService.java</div>
+      <div class="module-item" onclick="selectModule(this,'TokenManager.java')"><span class="module-indent"></span><span class="module-icon">📄</span> TokenManager.java</div>
+      <div class="module-item" onclick="selectModule(this,'user')">📁 user</div>
+      <div class="module-item" onclick="selectModule(this,'UserService.java')"><span class="module-indent"></span><span class="module-icon">📄</span> UserService.java</div>
+      <div class="module-item" onclick="selectModule(this,'UserRepository.java')"><span class="module-indent"></span><span class="module-icon">📄</span> UserRepository.java</div>
+      <div class="module-item" onclick="selectModule(this,'common')">📁 common</div>
+      <div class="module-item" onclick="selectModule(this,'StringUtils.java')"><span class="module-indent"></span><span class="module-icon">📄</span> StringUtils.java</div>
+      <div class="module-item" onclick="selectModule(this,'ValidationUtil.java')"><span class="module-indent"></span><span class="module-icon">📄</span> ValidationUtil.java</div>
+      <div class="module-item" onclick="selectModule(this,'api')">📁 api</div>
+      <div class="module-item" onclick="selectModule(this,'config')">📁 config</div>
+      <div class="module-item" onclick="selectModule(this,'model')">📁 model</div>
+      <div class="module-item" onclick="selectModule(this,'service')">📁 service</div>
+    </div>
+
+    <div class="sidebar-stats">
+      <div class="stat-item"><div class="stat-value">2,419</div><div class="stat-label">文件数</div></div>
+      <div class="stat-item"><div class="stat-value">186k</div><div class="stat-label">代码行</div></div>
+      <div class="stat-item"><div class="stat-value">38</div><div class="stat-label">模块</div></div>
+      <div class="stat-item"><div class="stat-value">99.2%</div><div class="stat-label">索引覆盖</div></div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="content-tabs">
+      <div class="content-tab active" data-tab="results" onclick="switchContentTab(this)">检索结果<span class="tab-count">6</span></div>
+      <div class="content-tab" data-tab="flow" onclick="switchContentTab(this)">代码流程<span class="tab-count">3</span></div>
+      <div class="content-tab" data-tab="deps" onclick="switchContentTab(this)">关联分析<span class="tab-count">4</span></div>
+      <div class="content-tab" data-tab="bugs" onclick="switchContentTab(this)">Bug 检测<span class="tab-count">2</span></div>
+    </div>
+
+    <!-- Tab: 检索结果 -->
+    <div class="results-area" id="tabResults">
+      <div class="result-group animate-in" id="group1">
+        <div class="result-group-header" onclick="toggleGroup('group1')">
+          <span class="result-group-toggle">▾</span><span class="result-group-icon">📁</span>
+          <span class="result-group-path">src/main/java/com/app/auth/</span>
+          <span class="result-group-name">LoginController.java</span>
+          <span class="result-group-badge badge-relevant">高度相关</span>
+        </div>
+        <div class="result-group-body">
+          <div class="result-item active animate-in delay-1" onclick="selectResult(this)">
+            <div class="result-item-header">
+              <span class="result-item-type type-function">Method</span>
+              <span class="result-item-name">login(HttpServletRequest, LoginRequest)</span>
+              <span class="result-item-line">L42-78</span>
+            </div>
+            <div class="result-item-desc">用户登录主入口方法，接收登录请求后进行参数校验、调用 AuthService 执行认证、生成 JWT Token 并返回。</div>
+            <div class="result-item-code"><span class="comment">// LoginController.java:42</span>
+<span class="keyword">@PostMapping</span>(<span class="string">"/api/auth/login"</span>)
+<span class="keyword">public</span> ResponseEntity&lt;LoginResponse&gt; <span class="func">login</span>(
+    HttpServletRequest request,
+    <span class="keyword">@Valid @RequestBody</span> LoginRequest loginReq) {
+<span class="highlight-line">  <span class="comment">// 1. 速率限制检查</span></span>
+<span class="highlight-line">  rateLimiter.<span class="func">checkLimit</span>(request.<span class="func">getRemoteAddr</span>());</span>
+<span class="highlight-line">  <span class="comment">// 2. 调用认证服务</span></span>
+<span class="highlight-line">  AuthResult result = authService.<span class="func">authenticate</span>(</span>
+<span class="highlight-line">      loginReq.<span class="func">getUsername</span>(), loginReq.<span class="func">getPassword</span>());</span>
+  String token = tokenManager.<span class="func">generateToken</span>(result.<span class="func">getUser</span>());
+  <span class="keyword">return</span> ResponseEntity.<span class="func">ok</span>(<span class="keyword">new</span> LoginResponse(token));
+}</div>
+            <div class="result-item-footer">
+              <button class="result-action" onclick="event.stopPropagation();chatAction('analyze')">🔬 AI 分析</button>
+              <button class="result-action" onclick="event.stopPropagation();chatAction('flow')">🔀 查看流程</button>
+              <button class="result-action" onclick="event.stopPropagation();copyPath('LoginController.java')">📋 复制路径</button>
+            </div>
+          </div>
+          <div class="result-item animate-in delay-2" onclick="selectResult(this)">
+            <div class="result-item-header">
+              <span class="result-item-type type-function">Method</span>
+              <span class="result-item-name">authenticate(String, String)</span>
+              <span class="result-item-line">L34-67</span>
+            </div>
+            <div class="result-item-desc">核心认证逻辑：查询用户 → 校验密码 → 检查账户状态 → 返回认证结果。</div>
+            <div class="result-item-code"><span class="comment">// AuthService.java:34</span>
+<span class="keyword">public</span> AuthResult <span class="func">authenticate</span>(String username, String password) {
+  User user = userRepository.<span class="func">findByUsername</span>(username);
+  <span class="keyword">if</span> (user == <span class="keyword">null</span>) {
+    <span class="keyword">throw new</span> AuthenticationException(<span class="string">"用户不存在"</span>);
+  }
+  <span class="keyword">if</span> (!passwordEncoder.<span class="func">matches</span>(password, user.<span class="func">getPasswordHash</span>())) {
+    <span class="func">incrementFailCount</span>(user);
+    <span class="keyword">throw new</span> AuthenticationException(<span class="string">"密码错误"</span>);
+  }
+  <span class="keyword">return new</span> AuthResult(user, AuthStatus.SUCCESS);
+}</div>
+            <div class="result-item-footer">
+              <button class="result-action" onclick="event.stopPropagation();chatAction('analyze')">🔬 AI 分析</button>
+              <button class="result-action" onclick="event.stopPropagation();copyPath('AuthService.java')">📋 复制路径</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-group animate-in delay-3" id="group2">
+        <div class="result-group-header" onclick="toggleGroup('group2')">
+          <span class="result-group-toggle">▾</span><span class="result-group-icon">📁</span>
+          <span class="result-group-path">src/main/java/com/app/auth/</span>
+          <span class="result-group-name">TokenManager.java</span>
+          <span class="result-group-badge badge-relevant">相关</span>
+        </div>
+        <div class="result-group-body">
+          <div class="result-item animate-in delay-4" onclick="selectResult(this)">
+            <div class="result-item-header">
+              <span class="result-item-type type-function">Method</span>
+              <span class="result-item-name">generateToken(User)</span>
+              <span class="result-item-line">L28-45</span>
+            </div>
+            <div class="result-item-desc">生成 JWT Token，包含用户 ID、角色声明和过期时间配置。使用 HMAC-SHA256 签名。</div>
+            <div class="result-item-code"><span class="keyword">public</span> String <span class="func">generateToken</span>(User user) {
+  <span class="keyword">return</span> Jwts.<span class="func">builder</span>()
+      .<span class="func">setSubject</span>(user.<span class="func">getId</span>().<span class="func">toString</span>())
+      .<span class="func">claim</span>(<span class="string">"roles"</span>, user.<span class="func">getRoles</span>())
+      .<span class="func">setExpiration</span>(<span class="func">getExpiration</span>())
+      .<span class="func">signWith</span>(key, SignatureAlgorithm.HS256)
+      .<span class="func">compact</span>();
+}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-group animate-in delay-4" id="group3">
+        <div class="result-group-header" onclick="toggleGroup('group3')">
+          <span class="result-group-toggle">▾</span><span class="result-group-icon">⚠️</span>
+          <span class="result-group-path">src/main/java/com/app/config/</span>
+          <span class="result-group-name">SecurityConfig.java</span>
+          <span class="result-group-badge badge-warning">配置关联</span>
+        </div>
+        <div class="result-group-body">
+          <div class="result-item animate-in delay-5" onclick="selectResult(this)">
+            <div class="result-item-header">
+              <span class="result-item-type type-class">Config</span>
+              <span class="result-item-name">SecurityFilterChain</span>
+              <span class="result-item-line">L18-52</span>
+            </div>
+            <div class="result-item-desc">Spring Security 过滤器链配置，定义登录接口的访问规则、CORS 策略以及 JWT 过滤器注入位置。</div>
+            <div class="result-item-code"><span class="keyword">@Bean</span>
+<span class="keyword">public</span> SecurityFilterChain <span class="func">filterChain</span>(HttpSecurity http) {
+  http.<span class="func">authorizeHttpRequests</span>(auth -> auth
+      .<span class="func">requestMatchers</span>(<span class="string">"/api/auth/**"</span>).<span class="func">permitAll</span>()
+      .<span class="func">anyRequest</span>().<span class="func">authenticated</span>()
+  )
+  .<span class="func">addFilterBefore</span>(jwtFilter, UsernamePasswordAuthenticationFilter.<span class="keyword">class</span>);
+  <span class="keyword">return</span> http.<span class="func">build</span>();
+}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: 代码流程 -->
+    <div class="results-area" id="tabFlow" style="display:none">
+      <div style="padding:20px 24px">
+        <div style="font-family:var(--font-display);font-size:1.05rem;color:var(--text-primary);margin-bottom:4px">用户登录 — 调用流程图</div>
+        <div style="font-size:0.74rem;color:var(--text-tertiary);margin-bottom:20px">点击节点查看源码详情</div>
+      </div>
+      <div style="padding:0 24px 20px">
+        <div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:10px;padding-left:16px">🌐 接入层</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;padding-left:8px">
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">POST /api/auth/login</div><div style="font-size:0.65rem;color:var(--text-tertiary)">客户端请求</div></div>
+          <div style="display:flex;align-items:center;color:var(--text-tertiary);font-size:1.1rem">→</div>
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">LoginController</div><div style="font-size:0.65rem;color:var(--text-tertiary)">LoginController.java:42</div></div>
+        </div>
+      </div>
+      <div style="padding:0 24px 20px">
+        <div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:10px;padding-left:16px">⚙️ 业务层</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;padding-left:8px">
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">RateLimiter</div><div style="font-size:0.65rem;color:var(--text-tertiary)">RateLimiter.java:18</div></div>
+          <div style="display:flex;align-items:center;color:var(--text-tertiary);font-size:1.1rem">→</div>
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">AuthService</div><div style="font-size:0.65rem;color:var(--text-tertiary)">AuthService.java:34</div></div>
+          <div style="display:flex;align-items:center;color:var(--text-tertiary);font-size:1.1rem">→</div>
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">TokenManager</div><div style="font-size:0.65rem;color:var(--text-tertiary)">TokenManager.java:28</div></div>
+        </div>
+      </div>
+      <div style="padding:0 24px 20px">
+        <div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:10px;padding-left:16px">💾 数据层</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;padding-left:8px">
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">UserRepository</div><div style="font-size:0.65rem;color:var(--text-tertiary)">UserRepository.java:12</div></div>
+          <div style="display:flex;align-items:center;color:var(--text-tertiary);font-size:1.1rem">→</div>
+          <div class="flow-node" onclick="clickFlowNode(this)" style="padding:9px 14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);min-width:130px"><div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:500;color:var(--text-primary);margin-bottom:2px">PasswordEncoder</div><div style="font-size:0.65rem;color:var(--text-tertiary)">Spring Security BCrypt</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: 关联分析 -->
+    <div class="results-area" id="tabDeps" style="display:none">
+      <div style="padding:20px 24px">
+        <div style="font-family:var(--font-display);font-size:1.05rem;color:var(--text-primary);margin-bottom:4px">模块依赖关系</div>
+        <div style="font-size:0.74rem;color:var(--text-tertiary);margin-bottom:20px">LoginController 的上下游依赖</div>
+      </div>
+      <div style="padding:0 24px">
+        <div class="dep-card" onclick="clickDepCard(this)" style="padding:14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:10px;cursor:pointer;transition:all var(--transition-fast)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+            <div style="width:26px;height:26px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:0.82rem">🔐</div>
+            <div style="font-family:var(--font-mono);font-size:0.78rem;font-weight:500;color:var(--text-primary)">AuthService</div>
+            <span class="badge-info" style="font-size:0.62rem;padding:2px 6px;border-radius:3px;margin-left:auto">核心依赖</span>
+          </div>
+          <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">认证核心服务，负责用户查询、密码校验、账户状态检查。</div>
+        </div>
+        <div class="dep-card" onclick="clickDepCard(this)" style="padding:14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:10px;cursor:pointer;transition:all var(--transition-fast)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+            <div style="width:26px;height:26px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:0.82rem">🎟️</div>
+            <div style="font-family:var(--font-mono);font-size:0.78rem;font-weight:500;color:var(--text-primary)">TokenManager</div>
+            <span class="badge-relevant" style="font-size:0.62rem;padding:2px 6px;border-radius:3px;margin-left:auto">下游</span>
+          </div>
+          <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">JWT 令牌管理，认证成功后生成 Access Token。</div>
+        </div>
+        <div class="dep-card" onclick="clickDepCard(this)" style="padding:14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:10px;cursor:pointer;transition:all var(--transition-fast)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+            <div style="width:26px;height:26px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:0.82rem">⏱️</div>
+            <div style="font-family:var(--font-mono);font-size:0.78rem;font-weight:500;color:var(--text-primary)">RateLimiter</div>
+            <span class="badge-warning" style="font-size:0.62rem;padding:2px 6px;border-radius:3px;margin-left:auto">前置</span>
+          </div>
+          <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">基于 IP 的速率限制器，滑动窗口算法，默认 5 次/分钟。</div>
+        </div>
+        <div class="dep-card" onclick="clickDepCard(this)" style="padding:14px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:10px;cursor:pointer;transition:all var(--transition-fast)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+            <div style="width:26px;height:26px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:0.82rem">🛡️</div>
+            <div style="font-family:var(--font-mono);font-size:0.78rem;font-weight:500;color:var(--text-primary)">SecurityConfig</div>
+            <span class="badge-error" style="font-size:0.62rem;padding:2px 6px;border-radius:3px;margin-left:auto">配置</span>
+          </div>
+          <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">Spring Security 全局配置，/api/auth/** 路径放行规则。</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Bug 检测 -->
+    <div class="results-area" id="tabBugs" style="display:none">
+      <div style="padding:20px 24px">
+        <div style="display:flex;gap:12px;margin-bottom:20px">
+          <div onclick="filterBugs('all')" style="flex:1;padding:12px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;cursor:pointer;transition:all var(--transition-fast)"><div style="font-family:var(--font-mono);font-size:1.4rem;font-weight:600;color:var(--text-primary)">6</div><div style="font-size:0.65rem;color:var(--text-tertiary)">全部问题</div></div>
+          <div onclick="filterBugs('high')" style="flex:1;padding:12px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;cursor:pointer;transition:all var(--transition-fast)"><div style="font-family:var(--font-mono);font-size:1.4rem;font-weight:600;color:var(--error)">2</div><div style="font-size:0.65rem;color:var(--text-tertiary)">高危</div></div>
+          <div onclick="filterBugs('medium')" style="flex:1;padding:12px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;cursor:pointer;transition:all var(--transition-fast)"><div style="font-family:var(--font-mono);font-size:1.4rem;font-weight:600;color:var(--warning)">2</div><div style="font-size:0.65rem;color:var(--text-tertiary)">中危</div></div>
+          <div onclick="filterBugs('low')" style="flex:1;padding:12px;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;cursor:pointer;transition:all var(--transition-fast)"><div style="font-family:var(--font-mono);font-size:1.4rem;font-weight:600;color:var(--info)">2</div><div style="font-size:0.65rem;color:var(--text-tertiary)">低危</div></div>
+        </div>
+        <div id="bugListItems">
+          <div class="finding-card severity-high" data-severity="high" onclick="showBugDetail(0)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--error);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--error-dim);color:var(--error)">HIGH</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">密码错误信息泄露用户存在性</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">"用户不存在" 和 "密码错误" 返回不同错误信息，攻击者可枚举有效用户名。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">AuthService.java : L40-45</div>
+          </div>
+          <div class="finding-card severity-high" data-severity="high" onclick="showBugDetail(1)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--error);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--error-dim);color:var(--error)">HIGH</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">SQL 注入风险 — 用户查询未参数化</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">userRepository 中存在拼接 SQL 的旧代码路径，原生查询分支未使用参数绑定。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">UserRepository.java : L88</div>
+          </div>
+          <div class="finding-card severity-medium" data-severity="medium" onclick="showBugDetail(2)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--warning);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--warning-dim);color:var(--warning)">MEDIUM</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">JWT 过期时间过长</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">Token 有效期为 2 小时，建议缩短至 30 分钟，配合 Refresh Token 机制。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">TokenManager.java : L35</div>
+          </div>
+          <div class="finding-card severity-medium" data-severity="medium" onclick="showBugDetail(3)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--warning);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--warning-dim);color:var(--warning)">MEDIUM</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">异常处理未区分业务与系统异常</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">AuthenticationException 未被 @ExceptionHandler 显式捕获，可能返回 500。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">GlobalExceptionHandler.java : L22</div>
+          </div>
+          <div class="finding-card severity-low" data-severity="low" onclick="showBugDetail(4)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--info);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--info-dim);color:var(--info)">LOW</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">缺少登录成功日志记录</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">认证成功路径未记录审计日志，建议添加登录时间、IP、设备信息。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">LoginController.java : L65</div>
+          </div>
+          <div class="finding-card severity-low" data-severity="low" onclick="showBugDetail(5)" style="padding:12px 14px;background:var(--bg-tertiary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;border-left:3px solid var(--info);cursor:pointer;transition:border-color var(--transition-fast)">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="font-size:0.62rem;font-weight:600;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--info-dim);color:var(--info)">LOW</span><span style="font-size:0.78rem;font-weight:500;color:var(--text-primary)">硬编码的 Token 密钥</span></div>
+            <div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5">JWT 签名密钥存在默认硬编码值，生产环境若未覆盖将使用弱密钥。</div>
+            <div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-tertiary);margin-top:5px">TokenManager.java : L15</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Right: Chat Panel -->
+  <aside class="chat-panel">
+    <div class="chat-header">
+      <div class="chat-title"><span>💬</span> 代码助手</div>
+      <div class="chat-header-actions">
+        <button class="chat-header-btn" onclick="clearChat()" title="清空对话">🗑</button>
+        <button class="chat-header-btn" onclick="exportChat()" title="导出对话">📋</button>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+      <!-- Welcome -->
+      <div class="msg ai">
+        <div class="msg-avatar">CL</div>
+        <div class="msg-body">
+          <div class="msg-name">CodeLens</div>
+          <div class="msg-bubble">你好！我是代码检索助手。你可以用自然语言向我提问，我会在 <strong>user-service</strong> 仓库中帮你定位代码、分析逻辑、检测问题。</div>
+          <div class="msg-actions">
+            <button class="msg-action-btn" onclick="quickAsk('用户登录在哪实现')">🔍 用户登录在哪实现</button>
+            <button class="msg-action-btn" onclick="quickAsk('字符串判空方法')">🔍 字符串判空方法</button>
+            <button class="msg-action-btn" onclick="quickAsk('检测 auth 模块的 Bug')">🐛 检测 auth 模块</button>
+          </div>
+          <div class="msg-time">刚刚</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-suggestions" id="chatSuggestions">
+      <span class="chat-suggest" onclick="quickAsk('JWT Token 刷新逻辑')">JWT Token 刷新</span>
+      <span class="chat-suggest" onclick="quickAsk('数据库连接池配置在哪')">数据库连接池</span>
+      <span class="chat-suggest" onclick="quickAsk('异常处理全局拦截')">全局异常处理</span>
+      <span class="chat-suggest" onclick="quickAsk('Redis 缓存策略')">Redis 缓存策略</span>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-row">
+        <div class="chat-input-wrap">
+          <textarea class="chat-textarea" id="chatInput" rows="1" placeholder="输入问题，如 &quot;用户登录怎么实现的&quot; …" onkeydown="handleChatKey(event)" oninput="autoResize(this)"></textarea>
+        </div>
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendMessage()">↑</button>
+      </div>
+      <div class="chat-input-hint">
+        <span><kbd>Enter</kbd> 发送</span>
+        <span><kbd>Shift+Enter</kbd> 换行</span>
+        <span style="margin-left:auto"><kbd>Ctrl+K</kbd> 聚焦</span>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeModal('settingsModal')">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">⚙ 系统设置</div><button class="modal-close" onclick="closeModal('settingsModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">LLM 模型</label><select class="form-select"><option>Qwen2.5-Coder-32B (本地)</option><option>DeepSeek-Coder-V2-Lite (本地)</option><option>CodeLlama-70B (本地)</option><option disabled>──────────</option><option>GPT-4o (API)</option><option>Claude 3.5 Sonnet (API)</option></select><div class="form-hint">本地模型需 GPU 显存 ≥ 16GB</div></div>
+      <div class="form-row"><div class="form-group"><label class="form-label">Embedding 模型</label><select class="form-select"><option>bge-large-zh-v1.5</option><option>m3e-base</option><option>text2vec-large-chinese</option></select></div><div class="form-group"><label class="form-label">向量数据库</label><select class="form-select"><option>Milvus</option><option>Chroma</option><option>FAISS</option></select></div></div>
+      <div class="form-group"><label class="form-label">GPU 设备</label><div class="toggle-row"><span class="toggle-label">RTX 5070 Ti 16GB · CUDA 13.2</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div></div>
+      <div class="form-group"><label class="form-label">检索设置</label><div class="toggle-row"><span class="toggle-label">语义重排序 (Reranker)</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div><div class="toggle-row"><span class="toggle-label">代码语法感知分块</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div><div class="toggle-row"><span class="toggle-label">索引时自动 Bug 扫描</span><div class="toggle-switch" onclick="this.classList.toggle('on')"></div></div></div>
+    </div>
+    <div class="modal-footer"><button class="modal-btn" onclick="closeModal('settingsModal')">取消</button><button class="modal-btn primary" onclick="closeModal('settingsModal');toast('success','设置已保存')">保存设置</button></div>
+  </div>
+</div>
+
+<!-- Index Repo Modal -->
+<div class="modal-overlay" id="indexModal" onclick="if(event.target===this)closeModal('indexModal')">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">＋ 索引新仓库</div><button class="modal-close" onclick="closeModal('indexModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">仓库地址</label><input class="form-input" placeholder="https://github.com/org/repo 或本地路径" spellcheck="false"></div>
+      <div class="form-row"><div class="form-group"><label class="form-label">语言</label><select class="form-select"><option>自动检测</option><option>Java</option><option>Python</option><option>Go</option><option>TypeScript</option><option>Rust</option></select></div><div class="form-group"><label class="form-label">分支</label><input class="form-input" value="main" spellcheck="false"></div></div>
+      <div class="form-group"><label class="form-label">排除规则</label><input class="form-input" value="node_modules, .git, dist, build, vendor" spellcheck="false"><div class="form-hint">用逗号分隔，支持 glob 模式</div></div>
+      <div class="form-group"><label class="form-label">索引选项</label><div class="toggle-row"><span class="toggle-label">生成向量嵌入</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div><div class="toggle-row"><span class="toggle-label">构建 AST 语法树</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div><div class="toggle-row"><span class="toggle-label">自动 Bug 扫描</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div></div>
+    </div>
+    <div class="modal-footer"><button class="modal-btn" onclick="closeModal('indexModal')">取消</button><button class="modal-btn primary" onclick="closeModal('indexModal');toast('info','仓库索引已启动，预计 3-5 分钟…')">开始索引</button></div>
+  </div>
+</div>
+
+<!-- Bug Detail Modal -->
+<div class="modal-overlay" id="bugDetailModal" onclick="if(event.target===this)closeModal('bugDetailModal')">
+  <div class="modal" style="width:min(600px,90vw)">
+    <div class="modal-header"><div class="modal-title" id="bugDetailTitle">🐛 Bug 详情</div><button class="modal-close" onclick="closeModal('bugDetailModal')">✕</button></div>
+    <div class="modal-body" id="bugDetailBody"></div>
+    <div class="modal-footer"><button class="modal-btn" onclick="closeModal('bugDetailModal')">关闭</button><button class="modal-btn primary" onclick="closeModal('bugDetailModal');toast('success','修复建议已应用')">应用修复建议</button></div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ─── Chat AI Responses ─── */
+const aiResponses = {
+  '用户登录在哪实现': {
+    text: '在 <strong>user-service</strong> 中，用户登录的入口是 <code>LoginController.login()</code>（L42），完整调用链如下：',
+    files: [
+      { icon: '📄', name: 'LoginController.java', meta: 'L42-78 · login()', action: '入口控制器' },
+      { icon: '📄', name: 'AuthService.java', meta: 'L34-67 · authenticate()', action: '认证逻辑' },
+      { icon: '📄', name: 'TokenManager.java', meta: 'L28-45 · generateToken()', action: 'JWT 生成' }
+    ],
+    metrics: { val1: 'A', label1: '复杂度', cls1: 'good', val2: '92%', label2: '可维护性', cls2: 'good', val3: 'B', label3: '测试覆盖', cls3: 'warn' },
+    codeBlock: { lang: 'java', code: `<span class="cmt">// LoginController.java:42</span>
+<span class="kw">@PostMapping</span>(<span class="str">"/api/auth/login"</span>)
+<span class="kw">public</span> ResponseEntity&lt;LoginResponse&gt; <span class="fn">login</span>(
+    HttpServletRequest request,
+    <span class="kw">@Valid @RequestBody</span> LoginRequest loginReq) {
+<span class="hl">  rateLimiter.<span class="fn">checkLimit</span>(request.<span class="fn">getRemoteAddr</span>());</span>
+<span class="hl">  AuthResult result = authService.<span class="fn">authenticate</span>(</span>
+<span class="hl">      loginReq.<span class="fn">getUsername</span>(), loginReq.<span class="fn">getPassword</span>());</span>
+  String token = tokenManager.<span class="fn">generateToken</span>(result.<span class="fn">getUser</span>());
+  <span class="kw">return</span> ResponseEntity.<span class="fn">ok</span>(<span class="kw">new</span> LoginResponse(token));
+}` },
+    findings: [{ sev: 'HIGH', title: '密码错误信息泄露用户存在性', desc: '建议统一返回"用户名或密码错误"', file: 'AuthService.java:40' }],
+    suggestions: ['查看完整调用流程', '检测 auth 模块的 Bug', '分析 TokenManager 安全性']
+  },
+  '字符串判空方法': {
+    text: '在 <code>common</code> 模块的 <strong>StringUtils.java</strong> 中找到了字符串判空相关的工具方法：',
+    files: [
+      { icon: '📄', name: 'StringUtils.java', meta: 'L12-30 · isEmpty() / isBlank()', action: '工具类' },
+      { icon: '📄', name: 'ValidationUtil.java', meta: 'L45-52 · requireNonEmpty()', action: '校验工具' }
+    ],
+    codeBlock: { lang: 'java', code: `<span class="cmt">// StringUtils.java:12</span>
+<span class="kw">public static boolean</span> <span class="fn">isEmpty</span>(String str) {
+  <span class="kw">return</span> str == <span class="kw">null</span> || str.<span class="fn">length</span>() == 0;
+}
+
+<span class="kw">public static boolean</span> <span class="fn">isBlank</span>(String str) {
+  <span class="kw">return</span> str == <span class="kw">null</span> || str.<span class="fn">trim</span>().<span class="fn">length</span>() == 0;
+}` },
+    suggestions: ['查看所有工具方法', '搜索类似工具类', '查看调用方']
+  },
+  '检测 auth 模块的 Bug': {
+    text: '已完成对 <strong>auth</strong> 模块的 Bug 扫描，发现 <strong>6 个问题</strong>（2 高危 / 2 中危 / 2 低危）：',
+    findings: [
+      { sev: 'HIGH', title: '密码错误信息泄露用户存在性', desc: '不同的错误消息可被用于用户枚举攻击', file: 'AuthService.java:40' },
+      { sev: 'HIGH', title: 'SQL 注入风险 — 用户查询未参数化', desc: '原生查询分支存在字符串拼接', file: 'UserRepository.java:88' },
+      { sev: 'MEDIUM', title: 'JWT 过期时间过长（2h）', desc: '建议缩短至 30 分钟 + Refresh Token', file: 'TokenManager.java:35' },
+      { sev: 'MEDIUM', title: '异常处理未区分业务与系统异常', desc: '可能返回 500 而非 401', file: 'GlobalExceptionHandler.java:22' }
+    ],
+    suggestions: ['查看所有 Bug 详情', '生成修复 PR', '导出扫描报告']
+  },
+  'JWT Token 刷新逻辑': {
+    text: '当前项目中 <strong>没有实现 Token 刷新机制</strong>。现有逻辑是一次性生成 2h 有效期的 JWT，过期后需要重新登录。<br><br>建议引入 Refresh Token 方案：',
+    codeBlock: { lang: 'java', code: `<span class="cmt">// 建议实现 TokenManager.refreshToken()</span>
+<span class="kw">public</span> TokenPair <span class="fn">refreshToken</span>(String refreshToken) {
+  <span class="cmt">// 1. 验证 refresh token 有效性</span>
+  Claims claims = <span class="fn">parseToken</span>(refreshToken);
+  <span class="cmt">// 2. 检查是否在黑名单中</span>
+  <span class="kw">if</span> (tokenBlacklist.<span class="fn">contains</span>(refreshToken)) {
+    <span class="kw">throw new</span> TokenException(<span class="str">"Token 已失效"</span>);
+  }
+  <span class="cmt">// 3. 生成新的 token pair</span>
+  User user = userRepo.<span class="fn">findById</span>(claims.<span class="fn">getSubject</span>());
+  <span class="kw">return new</span> TokenPair(
+    <span class="fn">generateAccessToken</span>(user),
+    <span class="fn">generateRefreshToken</span>(user));
+}` },
+    suggestions: ['查看现有 TokenManager 完整代码', '生成 Refresh Token 实现方案']
+  },
+  '数据库连接池配置在哪': {
+    text: '数据库连接池配置在 <code>config</code> 模块的 <strong>DataSourceConfig.java</strong> 中，使用 HikariCP：',
+    files: [
+      { icon: '📄', name: 'DataSourceConfig.java', meta: 'L8-35 · HikariCP 配置', action: '数据源配置' },
+      { icon: '📄', name: 'application.yml', meta: 'spring.datasource.hikari.*', action: '配置文件' }
+    ],
+    codeBlock: { lang: 'yaml', code: `<span class="cmt"># application.yml</span>
+<span class="fn">spring</span>:
+  <span class="fn">datasource</span>:
+    <span class="fn">hikari</span>:
+      <span class="fn">maximum-pool-size</span>: <span class="str">20</span>
+      <span class="fn">minimum-idle</span>: <span class="str">5</span>
+      <span class="fn">connection-timeout</span>: <span class="str">30000</span>
+      <span class="fn">idle-timeout</span>: <span class="str">600000</span>
+      <span class="fn">max-lifetime</span>: <span class="str">1800000</span>` },
+    suggestions: ['查看完整数据源配置', '检查连接池参数是否合理']
+  },
+  '异常处理全局拦截': {
+    text: '全局异常处理在 <code>@ControllerAdvice</code> 注解的 <strong>GlobalExceptionHandler.java</strong> 中，但存在一些问题：',
+    files: [
+      { icon: '📄', name: 'GlobalExceptionHandler.java', meta: 'L5-68 · @ControllerAdvice', action: '异常处理器' }
+    ],
+    findings: [
+      { sev: 'MEDIUM', title: 'AuthenticationException 未显式捕获', desc: '可能被通用 handler 捕获返回 500', file: 'GlobalExceptionHandler.java:22' }
+    ],
+    codeBlock: { lang: 'java', code: `<span class="cmt">// GlobalExceptionHandler.java:5</span>
+<span class="kw">@RestControllerAdvice</span>
+<span class="kw">public class</span> GlobalExceptionHandler {
+
+  <span class="cmt">// ⚠️ 缺少对 AuthenticationException 的专用处理</span>
+  <span class="kw">@ExceptionHandler</span>(Exception.<span class="kw">class</span>)
+  <span class="kw">public</span> ResponseEntity&lt;ErrorResponse&gt; <span class="fn">handleGeneric</span>(Exception e) {
+    <span class="kw">return</span> ResponseEntity.<span class="fn">status</span>(500)
+      .<span class="fn">body</span>(<span class="kw">new</span> ErrorResponse(<span class="str">"INTERNAL_ERROR"</span>, e.<span class="fn">getMessage</span>()));
+  }
+}` },
+    suggestions: ['查看完整异常处理器', '生成异常处理修复方案']
+  },
+  'Redis 缓存策略': {
+    text: 'Redis 缓存配置在 <strong>RedisConfig.java</strong> 中，主要用于以下场景：',
+    files: [
+      { icon: '📄', name: 'RedisConfig.java', meta: 'L10-40 · RedisTemplate 配置', action: 'Redis 配置' },
+      { icon: '📄', name: 'RateLimiter.java', meta: 'L18 · Redis 滑动窗口', action: '速率限制' },
+      { icon: '📄', name: 'TokenBlacklist.java', meta: 'L12 · Token 黑名单', action: 'Token 管理' }
+    ],
+    codeBlock: { lang: 'java', code: `<span class="cmt">// RedisConfig.java:10</span>
+<span class="kw">@Bean</span>
+<span class="kw">public</span> RedisTemplate&lt;String, Object&gt; <span class="fn">redisTemplate</span>(
+    RedisConnectionFactory factory) {
+  RedisTemplate&lt;String, Object&gt; template = <span class="kw">new</span> RedisTemplate&lt;&gt;();
+  template.<span class="fn">setConnectionFactory</span>(factory);
+  template.<span class="fn">setKeySerializer</span>(<span class="kw">new</span> StringRedisSerializer());
+  template.<span class="fn">setValueSerializer</span>(<span class="kw">new</span> GenericJackson2JsonRedisSerializer());
+  <span class="kw">return</span> template;
+}` },
+    suggestions: ['查看所有 Redis 使用场景', '检查缓存过期策略']
+  }
+};
+
+/* ─── State ─── */
+let chatHistory = [];
+let isTyping = false;
+
+/* ─── Repo Dropdown ─── */
+function toggleRepoDropdown(e){e.stopPropagation();const s=document.getElementById('repoSelector'),d=document.getElementById('repoDropdown');s.classList.toggle('open');d.classList.toggle('show')}
+function selectRepo(e,name,meta,el){e.stopPropagation();document.querySelectorAll('.repo-dropdown-item').forEach(i=>i.classList.remove('selected'));el.classList.add('selected');document.getElementById('currentRepoName').textContent=name;document.getElementById('currentRepoMeta').textContent=meta;document.getElementById('repoSelector').classList.remove('open');document.getElementById('repoDropdown').classList.remove('show');toast('success',`已切换到 ${name}`)}
+document.addEventListener('click',()=>{document.getElementById('repoSelector').classList.remove('open');document.getElementById('repoDropdown').classList.remove('show')});
+
+/* ─── Mode Switch ─── */
+function switchMode(el){
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));el.classList.add('active');
+  const mode=el.dataset.mode;
+  const tabs={search:'results',bug:'bugs',analysis:'deps',flow:'flow',docs:'results'};
+  switchContentTab(document.querySelector(`[data-tab="${tabs[mode]}"]`));
+  const names={search:'语义检索',bug:'Bug 检测',analysis:'代码分析',flow:'逻辑地图',docs:'文档生成'};
+  toast('info',`已切换到${names[mode]}模式`);
+}
+
+/* ─── Module Tree ─── */
+function selectModule(el,name){document.querySelectorAll('.module-item').forEach(i=>i.classList.remove('active'));el.classList.add('active');toast('info',`选中模块：${name}`)}
+
+/* ─── Content Tabs ─── */
+function switchContentTab(el){
+  document.querySelectorAll('.content-tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');
+  const tab=el.dataset.tab;
+  ['Results','Flow','Deps','Bugs'].forEach(id=>document.getElementById('tab'+id).style.display='none');
+  const map={results:'tabResults',flow:'tabFlow',deps:'tabDeps',bugs:'tabBugs'};
+  document.getElementById(map[tab]).style.display='';
+}
+
+/* ─── Result Groups ─── */
+function toggleGroup(id){document.getElementById(id).classList.toggle('collapsed')}
+
+/* ─── Result Items ─── */
+function selectResult(el){document.querySelectorAll('.result-item').forEach(i=>i.classList.remove('active'));el.classList.add('active')}
+
+/* ─── Chat Actions from result items ─── */
+function chatAction(type){
+  const input=document.getElementById('chatInput');
+  if(type==='analyze') input.value='分析 LoginController.login() 方法的代码质量';
+  else if(type==='flow') input.value='展示用户登录的完整调用流程';
+  sendMessage();
+}
+function copyPath(name){navigator.clipboard.writeText('src/main/java/com/app/auth/'+name).then(()=>toast('success','已复制路径')).catch(()=>toast('info','路径：src/main/java/com/app/auth/'+name))}
+
+/* ─── Flow / Dep clicks ─── */
+function clickFlowNode(el){document.querySelectorAll('.flow-node').forEach(n=>n.style.borderColor='');el.style.borderColor='var(--accent)';toast('info','查看节点：'+el.querySelector('div:first-child').textContent)}
+function clickDepCard(el){document.querySelectorAll('.dep-card').forEach(c=>c.style.borderColor='');el.style.borderColor='var(--accent)';toast('info','分析依赖：'+el.querySelector('div:nth-child(1) div:nth-child(2)').textContent)}
+
+/* ─── Bug ─── */
+function filterBugs(sev){document.querySelectorAll('#bugListItems .finding-card').forEach(c=>{c.style.display=(sev==='all'||c.dataset.severity===sev)?'':'none'})}
+const bugDetails=[
+  {title:'密码错误信息泄露用户存在性',severity:'HIGH',file:'AuthService.java',line:'L40-45',fix:`<span class="cmt">// 修复：统一错误消息</span>
+<span class="kw">if</span> (user == <span class="kw">null</span> || !passwordEncoder.<span class="fn">matches</span>(password, user.<span class="fn">getPasswordHash</span>())) {
+  <span class="kw">throw new</span> AuthenticationException(<span class="str">"用户名或密码错误"</span>);
+}`},
+  {title:'SQL 注入风险',severity:'HIGH',file:'UserRepository.java',line:'L88',fix:`<span class="cmt">// 修复：使用参数化查询</span>
+<span class="kw">@Query</span>(<span class="str">"SELECT u FROM User u WHERE u.username = :username"</span>)
+User <span class="fn">findByUsernameSafe</span>(<span class="kw">@Param</span>(<span class="str">"username"</span>) String username);`},
+  {title:'JWT 过期时间过长',severity:'MEDIUM',file:'TokenManager.java',line:'L35',fix:`<span class="cmt">// 修复：缩短 token 有效期</span>
+<span class="kw">private static final long</span> ACCESS_TOKEN_EXPIRY = 30 * 60 * 1000; <span class="cmt">// 30 分钟</span>
+<span class="kw">private static final long</span> REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; <span class="cmt">// 7 天</span>`},
+  {title:'异常处理未区分业务与系统异常',severity:'MEDIUM',file:'GlobalExceptionHandler.java',line:'L22',fix:`<span class="cmt">// 修复：添加专用异常处理器</span>
+<span class="kw">@ExceptionHandler</span>(AuthenticationException.<span class="kw">class</span>)
+<span class="kw">public</span> ResponseEntity&lt;ErrorResponse&gt; <span class="fn">handleAuth</span>(AuthenticationException e) {
+  <span class="kw">return</span> ResponseEntity.<span class="fn">status</span>(401)
+    .<span class="fn">body</span>(<span class="kw">new</span> ErrorResponse(<span class="str">"AUTH_FAILED"</span>, e.<span class="fn">getMessage</span>()));
+}`},
+  {title:'缺少登录成功日志记录',severity:'LOW',file:'LoginController.java',line:'L65',fix:`<span class="cmt">// 修复：添加审计日志</span>
+<span class="kw">@AuditLog</span>(action = <span class="str">"LOGIN"</span>)
+<span class="kw">public</span> ResponseEntity&lt;LoginResponse&gt; <span class="fn">login</span>(...) { ... }`},
+  {title:'硬编码的 Token 密钥',severity:'LOW',file:'TokenManager.java',line:'L15',fix:`<span class="cmt">// 修复：移除默认值，启动时校验</span>
+<span class="kw">@Value</span>(<span class="str">"${jwt.secret}"</span>) <span class="cmt">// 无默认值</span>
+<span class="kw">private</span> String secret;
+
+<span class="kw">@PostConstruct</span>
+<span class="kw">void</span> <span class="fn">validateSecret</span>() {
+  <span class="kw">if</span> (secret == <span class="kw">null</span> || secret.<span class="fn">length</span>() < 32) {
+    <span class="kw">throw new</span> IllegalStateException(<span class="str">"JWT 密钥强度不足"</span>);
+  }
+}`}
+];
+function showBugDetail(idx){
+  const b=bugDetails[idx];
+  document.getElementById('bugDetailTitle').textContent='🐛 '+b.title;
+  document.getElementById('bugDetailBody').innerHTML=`
+    <div style="margin-bottom:14px"><span style="font-size:0.68rem;font-weight:600;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:${b.severity==='HIGH'?'var(--error-dim);color:var(--error)':b.severity==='MEDIUM'?'var(--warning-dim);color:var(--warning)':'var(--info-dim);color:var(--info)'}">${b.severity}</span><span style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-tertiary);margin-left:10px">${b.file} : ${b.line}</span></div>
+    <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.7;margin-bottom:14px">问题描述和修复建议详见下方代码：</div>
+    <div class="bug-detail-code">${b.fix}</div>`;
+  openModal('bugDetailModal');
+}
+
+/* ─── Chat ─── */
+function handleChatKey(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
+}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'}
+function quickAsk(q){document.getElementById('chatInput').value=q;sendMessage()}
+
+function sendMessage(){
+  const input=document.getElementById('chatInput');
+  const text=input.value.trim();
+  if(!text||isTyping)return;
+  input.value='';input.style.height='40px';
+  addMessage('user',text);
+  // Update search tags suggestions
+  updateSuggestions(text);
+  // Simulate AI response
+  isTyping=true;
+  document.getElementById('chatSendBtn').disabled=true;
+  const typingId=addTyping();
+  setTimeout(()=>{
+    removeTyping(typingId);
+    isTyping=false;
+    document.getElementById('chatSendBtn').disabled=false;
+    generateAIResponse(text);
+  },600+Math.random()*800);
+}
+
+function addMessage(role,content,extra=''){
+  const container=document.getElementById('chatMessages');
+  const now=new Date();
+  const time=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+  const isUser=role==='user';
+  const div=document.createElement('div');
+  div.className=`msg ${role}`;
+  div.innerHTML=`
+    <div class="msg-avatar">${isUser?'U':'CL'}</div>
+    <div class="msg-body">
+      <div class="msg-name">${isUser?'你':'CodeLens'}</div>
+      <div class="msg-bubble">${content}</div>
+      ${extra}
+      <div class="msg-time">${time}</div>
+    </div>`;
+  container.appendChild(div);
+  container.scrollTop=container.scrollHeight;
+  return div;
+}
+
+function addTyping(){
+  const container=document.getElementById('chatMessages');
+  const div=document.createElement('div');
+  div.className='msg ai';
+  const id='typing-'+Date.now();
+  div.id=id;
+  div.innerHTML=`
+    <div class="msg-avatar">CL</div>
+    <div class="msg-body">
+      <div class="msg-name">CodeLens</div>
+      <div class="msg-bubble"><div class="msg-typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>
+    </div>`;
+  container.appendChild(div);
+  container.scrollTop=container.scrollHeight;
+  return id;
+}
+function removeTyping(id){const el=document.getElementById(id);if(el)el.remove()}
+
+function generateAIResponse(query){
+  // Find best match
+  let bestMatch=null;let bestScore=0;
+  for(const[key,val]of Object.entries(aiResponses)){
+    const score=matchScore(query,key);
+    if(score>bestScore){bestScore=score;bestMatch={key,...val}}
+  }
+  if(bestScore<0.3)bestMatch=null;
+
+  let html='';
+  let extra='';
+
+  if(bestMatch){
+    html=bestMatch.text;
+
+    // Files
+    if(bestMatch.files){
+      extra+=`<div class="msg-attachments">${bestMatch.files.map(f=>
+        `<div class="msg-file" onclick="toast('info','打开文件：${f.name}')">
+          <span class="msg-file-icon">${f.icon}</span>
+          <div class="msg-file-info"><div class="msg-file-name">${f.name}</div><div class="msg-file-meta">${f.meta}</div></div>
+          <span class="msg-file-action">${f.action}</span>
+        </div>`
+      ).join('')}</div>`;
+    }
+
+    // Metrics
+    if(bestMatch.metrics){
+      const m=bestMatch.metrics;
+      extra+=`<div class="msg-metrics">
+        <div class="msg-metric"><div class="msg-metric-val ${m.cls1}">${m.val1}</div><div class="msg-metric-label">${m.label1}</div></div>
+        <div class="msg-metric"><div class="msg-metric-val ${m.cls2}">${m.val2}</div><div class="msg-metric-label">${m.label2}</div></div>
+        <div class="msg-metric"><div class="msg-metric-val ${m.cls3}">${m.val3}</div><div class="msg-metric-label">${m.label3}</div></div>
+      </div>`;
+    }
+
+    // Code block
+    if(bestMatch.codeBlock){
+      const cb=bestMatch.codeBlock;
+      extra+=`<div class="msg-code-block">
+        <div class="msg-code-header"><span class="msg-code-lang">${cb.lang}</span><button class="msg-code-copy" onclick="copyCode(this)">复制代码</button></div>
+        <div class="msg-code-content">${cb.code}</div>
+      </div>`;
+    }
+
+    // Findings
+    if(bestMatch.findings){
+      extra+=bestMatch.findings.map(f=>
+        `<div class="msg-finding" onclick="showBugDetail(0)"><div class="msg-finding-title">${f.sev==='HIGH'?'🔴':f.sev==='MEDIUM'?'🟡':'🔵'} ${f.title}</div><div class="msg-finding-desc">${f.desc} · ${f.file}</div></div>`
+      ).join('');
+    }
+
+    // Suggestions
+    if(bestMatch.suggestions){
+      extra+=`<div class="msg-actions">${bestMatch.suggestions.map(s=>
+        `<button class="msg-action-btn" onclick="quickAsk('${s}')">${s}</button>`
+      ).join('')}</div>`;
+    }
+
+    // Also update main content tabs if relevant
+    if(bestMatch.key==='用户登录在哪实现'){
+      switchContentTab(document.querySelector('[data-tab="results"]'));
+    } else if(bestMatch.key==='检测 auth 模块的 Bug'){
+      switchContentTab(document.querySelector('[data-tab="bugs"]'));
+    }
+
+  } else {
+    // Generic response
+    html=`我理解你在问 "<strong>${query}</strong>"。让我在代码库中搜索一下…`;
+    extra=`<div class="msg-actions">
+      <button class="msg-action-btn" onclick="quickAsk('用户登录在哪实现')">🔍 试试：用户登录在哪实现</button>
+      <button class="msg-action-btn" onclick="quickAsk('字符串判空方法')">🔍 试试：字符串判空方法</button>
+      <button class="msg-action-btn" onclick="quickAsk('检测 auth 模块的 Bug')">🐛 试试：检测 auth 模块的 Bug</button>
+    </div>`;
+  }
+
+  addMessage('ai',html,extra);
+}
+
+function matchScore(query,key){
+  const q=query.toLowerCase().replace(/[?？!！。，,.\s]/g,'');
+  const k=key.toLowerCase().replace(/[?？!！。，,.\s]/g,'');
+  // Exact contains
+  if(q.includes(k)||k.includes(q))return 1;
+  // Word overlap
+  const qWords=new Set(q.split(/(?<=[\u4e00-\u9fff])|(?=[\u4e00-\u9fff])|[\s]+/).filter(Boolean));
+  const kWords=new Set(k.split(/(?<=[\u4e00-\u9fff])|(?=[\u4e00-\u9fff])|[\s]+/).filter(Boolean));
+  let overlap=0;
+  for(const w of qWords)if(kWords.has(w))overlap++;
+  return overlap/Math.max(qWords.size,kWords.size);
+}
+
+function updateSuggestions(text){
+  const suggestions=document.getElementById('chatSuggestions');
+  const allSuggests=['JWT Token 刷新','数据库连接池配置','异常处理全局拦截','Redis 缓存策略','查看登录调用链','检测安全漏洞','代码质量分析','生成 API 文档'];
+  const filtered=allSuggests.filter(s=>!text.includes(s)).slice(0,4);
+  suggestions.innerHTML=filtered.map(s=>`<span class="chat-suggest" onclick="quickAsk('${s}')">${s}</span>`).join('');
+}
+
+function copyCode(btn){
+  const code=btn.closest('.msg-code-block').querySelector('.msg-code-content').textContent;
+  navigator.clipboard.writeText(code).then(()=>{btn.textContent='已复制';setTimeout(()=>btn.textContent='复制代码',1500)});
+}
+
+/* ─── Chat Header Actions ─── */
+function clearChat(){
+  const container=document.getElementById('chatMessages');
+  container.innerHTML='';
+  // Re-add welcome
+  const welcome=document.createElement('div');
+  welcome.className='msg ai';
+  welcome.innerHTML=`
+    <div class="msg-avatar">CL</div>
+    <div class="msg-body">
+      <div class="msg-name">CodeLens</div>
+      <div class="msg-bubble">对话已清空。有什么代码问题尽管问我！</div>
+      <div class="msg-actions">
+        <button class="msg-action-btn" onclick="quickAsk('用户登录在哪实现')">🔍 用户登录在哪实现</button>
+        <button class="msg-action-btn" onclick="quickAsk('检测 auth 模块的 Bug')">🐛 检测 auth 模块</button>
+      </div>
+      <div class="msg-time">刚刚</div>
+    </div>`;
+  container.appendChild(welcome);
+  toast('info','对话已清空');
+}
+function exportChat(){
+  toast('success','对话记录已导出到 chat-export.md');
+}
+
+/* ─── Modals ─── */
+function openModal(id){document.getElementById(id).classList.add('show')}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+
+/* ─── Toast ─── */
+function toast(type,msg){
+  const c=document.getElementById('toastContainer');
+  const icons={success:'✓',error:'✕',info:'ℹ'};
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span class="toast-icon">${icons[type]}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),400)},3000);
+}
+
+/* ─── Keyboard ─── */
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();document.getElementById('chatInput').focus()}
+  if(e.key==='Escape')document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
+});
+</script>
+</body>
+</html>

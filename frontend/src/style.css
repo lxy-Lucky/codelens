@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+  background: #0e0f11;
+  color: #e8e6e1;
+  overflow: hidden;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3b44; border-radius: 3px; }
+::selection { background: rgba(212, 165, 116, 0.25); }
+
+/* markdown rendered chat content */
+.md :where(p) { margin: 0.4em 0; }
+.md :where(code) {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  background: #131416;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #d4a574;
+}
+.md :where(pre) {
+  background: #131416;
+  border: 1px solid #2e2f37;
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+.md :where(pre code) { background: none; color: #9d9a93; padding: 0; }
