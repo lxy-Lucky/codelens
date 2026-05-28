@@ -30,7 +30,7 @@ def embed_query(text: str) -> list[float]:
 
 
 def embedding_dim() -> int:
-    return _embedder().get_sentence_embedding_dimension()
+    return _embedder().get_embedding_dimension()
 
 
 def rerank(query: str, docs: list[str]) -> list[float]:

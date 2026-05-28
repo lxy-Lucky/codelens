@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from fnmatch import fnmatch
 from pathlib import Path
 
-from app.services import embedding, qdrant_store, state
+from app.services import bm25_store, embedding, qdrant_store, state
 from app.services.chunker import chunk_source
 from app.services.languages import SUPPORTED_EXTS, detect_language
 
@@ -138,6 +138,7 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
         await asyncio.to_thread(state.delete_file_record, repo_id, stale)
         yield {"stage": "removed", "file": stale}
 
+    bm25_store.invalidate(repo_id)  # 内容可能变但 chunk 数不变,显式失效
     chunk_count = await asyncio.to_thread(state.count_chunks, repo_id)
     repo = await asyncio.to_thread(state.get_repo, repo_id)
     if repo:

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import CodeViewer from './CodeViewer.vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { useApp } from '../stores/app'
+
+// 懒加载 Monaco:仅在打开文件时才拉取这部分代码,不拖累首屏
+const CodeViewer = defineAsyncComponent(() => import('./CodeViewer.vue'))
 
 const app = useApp()
 const query = ref('')

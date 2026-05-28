@@ -11,7 +11,7 @@ import asyncio
 from fnmatch import fnmatch
 from pathlib import Path
 
-from app.services import neo4j_store, state
+from app.services import graph_enrich, neo4j_store, state
 from app.services.languages import LANG_TO_TS_GRAMMAR, SUPPORTED_EXTS, detect_language
 
 DEF_TYPES = {
@@ -134,9 +134,25 @@ def _build_sync(repo_id: str, root_path: str, excludes: list[str]) -> dict:
         walk_calls(node)
 
     clean_symbols = [{k: v for k, v in s.items() if k != "_node"} for s in symbols]
+
+    # ─── 增强:API 路由桥接 + MyBatis XML ───
+    routes = graph_enrich.extract_routes(root, files)
+    fe_calls = graph_enrich.extract_frontend_calls(root, files)
+    api_edges = graph_enrich.build_api_edges(routes, fe_calls)
+    xml_symbols, xml_edges = graph_enrich.extract_mybatis(root, files, name_to_keys)
+
+    all_symbols = clean_symbols + xml_symbols
+    all_edges = edges + api_edges + xml_edges
+
     neo4j_store.delete_repo(repo_id)
-    neo4j_store.upsert_symbols_and_edges(repo_id, clean_symbols, edges)
-    return {"symbols": len(clean_symbols), "edges": len(edges)}
+    neo4j_store.upsert_symbols_and_edges(repo_id, all_symbols, all_edges)
+    return {
+        "symbols": len(all_symbols),
+        "edges": len(all_edges),
+        "routes": len(routes),
+        "api_edges": len(api_edges),
+        "mybatis_edges": len(xml_edges),
+    }
 
 
 async def build_graph(repo_id: str) -> dict:

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import IndexRepoRequest, RepoInfo
-from app.services import indexer, neo4j_store, qdrant_store, state
+from app.services import bm25_store, indexer, neo4j_store, qdrant_store, state
 
 router = APIRouter(prefix="/api/repos", tags=["repos"])
 
@@ -68,4 +68,5 @@ async def delete_repo(repo_id: str):
     except Exception:
         pass
     await asyncio.to_thread(state.delete_repo, repo_id)
+    bm25_store.invalidate(repo_id)
     return {"ok": True}

@@ -53,6 +53,26 @@ def delete_repo(repo_id: str) -> None:
     )
 
 
+def scroll_repo(repo_id: str) -> list[dict]:
+    """拉取某仓库全部 chunk(供 BM25 构建语料)。"""
+    out: list[dict] = []
+    offset = None
+    flt = qm.Filter(must=[qm.FieldCondition(key="repo_id", match=qm.MatchValue(value=repo_id))])
+    while True:
+        points, offset = client().scroll(
+            collection_name=COLLECTION,
+            scroll_filter=flt,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        out.extend({"id": str(p.id), "payload": p.payload} for p in points)
+        if offset is None:
+            break
+    return out
+
+
 def search(repo_id: str, query_vector: list[float], limit: int) -> list[dict]:
     res = client().query_points(
         collection_name=COLLECTION,

@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import * as monaco from 'monaco-editor'
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+// 只注册需要的语言的 Monarch 语法高亮(只读查看无需语言服务 worker,避免 tsMode/htmlMode 等大 chunk)
+import 'monaco-editor/esm/vs/basic-languages/java/java.contribution'
+import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
+import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution'
+import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution'
+import 'monaco-editor/esm/vs/basic-languages/html/html.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import { useApp } from '../stores/app'
 
