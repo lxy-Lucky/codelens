@@ -89,7 +89,6 @@ function openHit(hit: CodeChunkHit) {
         >
           {{ LANG_LABEL[l] ?? l }}
         </button>
-        <span v-if="!app.searchLanguages.length" class="text-[0.6rem] text-txt-tertiary ml-1">(不选=全部)</span>
       </div>
     </div>
 
@@ -100,28 +99,28 @@ function openHit(hit: CodeChunkHit) {
         :class="app.mainTab === 'results' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'results'"
       >
-        检索结果 <span class="text-[0.62rem]">{{ app.searchHits.length }}</span>
+        语义检索 <span class="text-[0.62rem]">{{ app.searchHits.length }}</span>
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'deps' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'deps'"
       >
-        依赖
+        代码分析
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'graph' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'graph'"
       >
-        图谱<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
+        逻辑地图<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'docs' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
         @click="app.mainTab = 'docs'"
       >
-        文档
+        文档生成
       </div>
       <div
         class="group px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2 flex items-center gap-1.5"
