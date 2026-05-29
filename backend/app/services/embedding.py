@@ -6,13 +6,15 @@ from app.config import settings
 
 # 必须在 transformers/tokenizers/torch 导入前设置:
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # 子线程调用 fast tokenizer 会死锁
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # 减显存碎片
 # OMP/MKL=1:只要 embedding 或 reranker 任一在 CPU 跑,其在工作线程里的 OpenMP 并行区就会死锁,
 # 必须压到单线程规避。GPU 前向在显卡上无此问题。
 if "cpu" in (settings.embedding_device, settings.reranker_device):
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
 
-MAX_EMBED_CHARS = 8000  # 单 chunk 送入 encode 的字符上限,防止超长块拖死
+MAX_EMBED_CHARS = 2000   # 单 chunk 送入 encode 的字符上限(≈512 token)
+MAX_SEQ_LEN = 512        # 截断 token 上限:函数级 chunk 够用,断崖式降低激活显存、提速
 
 
 def _is_cuda() -> bool:
@@ -20,7 +22,7 @@ def _is_cuda() -> bool:
 
 
 def _batch_size() -> int:
-    return 64 if _is_cuda() else 16
+    return 32 if _is_cuda() else 16
 
 
 @lru_cache
@@ -31,6 +33,7 @@ def _embedder():
     if settings.embedding_device == "cpu":
         torch.set_num_threads(1)  # CPU 下避免非主线程 OpenMP 并行死锁
     model = SentenceTransformer(settings.embedding_model, device=settings.embedding_device)
+    model.max_seq_length = MAX_SEQ_LEN  # 关键:限制序列长度,防止大 chunk padding 撑爆显存
     if _is_cuda():
         model = model.half()  # fp16:显著提速、省一半显存(便于与 LLM 共存)
     return model
