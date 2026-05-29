@@ -180,10 +180,12 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
             yield {"stage": "indexed", "current": processed, "total": total,
                    "file": parsed_items[-1]["rel"]}
         except Exception as e:  # noqa: BLE001 整批失败不阻断,这批下次重试
+            import traceback
+            _log("batch error:\n" + traceback.format_exc())  # 打到 uvicorn 控制台
             errors += len(parsed_items)
             processed += len(parsed_items)
             yield {"stage": "file_error", "current": processed, "total": total,
-                   "file": "(batch)", "message": str(e)}
+                   "file": "(batch)", "message": f"{type(e).__name__}: {e}"}
 
     # 清理已删除的文件(上次有、这次没见到)
     for stale in set(prev_hashes) - seen:

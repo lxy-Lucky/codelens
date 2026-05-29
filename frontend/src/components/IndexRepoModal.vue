@@ -11,10 +11,12 @@ const name = ref('')
 const indexing = ref(false)
 const progress = ref({ current: 0, total: 0, stage: '', file: '' })
 const done = ref(false)
+const errorLog = ref<string[]>([])
 
 async function start() {
   if (!path.value.trim()) return
   indexing.value = true
+  errorLog.value = []
   try {
     const repo = await api.createRepo(path.value.trim(), name.value.trim() || undefined)
     await streamGetSSE(`/api/repos/${repo.id}/index`, (ev) => {
@@ -23,6 +25,9 @@ async function start() {
         total: ev.total ?? progress.value.total,
         stage: ev.stage ?? progress.value.stage,
         file: ev.file ?? '',
+      }
+      if ((ev.stage === 'file_error' || ev.stage === 'error') && ev.message) {
+        errorLog.value.push(`${ev.file ?? ''}: ${ev.message}`)
       }
       if (ev.stage === 'done' || ev.stage === 'error') done.value = true
     })
@@ -74,6 +79,13 @@ const pct = () =>
             <div class="h-full bg-accent transition-all" :style="{ width: pct() + '%' }" />
           </div>
           <div class="text-[0.62rem] text-txt-tertiary mt-1.5 truncate font-mono">{{ progress.file }}</div>
+        </div>
+
+        <div v-if="errorLog.length" class="bg-err/10 border border-err/30 rounded p-3 max-h-40 overflow-y-auto">
+          <div class="text-[0.7rem] font-semibold text-err mb-1.5">错误 ({{ errorLog.length }})</div>
+          <div v-for="(msg, i) in errorLog" :key="i" class="text-[0.64rem] text-err/90 font-mono break-all mb-1">
+            {{ msg }}
+          </div>
         </div>
       </div>
       <div class="px-5 py-3.5 border-t border-border-subtle flex justify-end gap-2">
