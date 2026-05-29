@@ -9,13 +9,13 @@ class Settings(BaseSettings):
 
     # Ollama / LLM
     ollama_base_url: str = "http://localhost:11434"
-    llm_model: str = "qwen3:14b"
-    llm_num_ctx: int = 16384
+    llm_model: str = "qwen3.5:9b"
+    llm_num_ctx: int = 24576
 
     # Embedding / reranker
     embedding_model: str = "BAAI/bge-m3"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
-    embedding_device: str = "cpu"
+    embedding_device: str = "cuda"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"

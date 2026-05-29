@@ -9,6 +9,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from app.services import fileio
 from app.services.chunker import _extract_script_from_vue
 from app.services.languages import LANG_TO_TS_GRAMMAR, detect_language
 
@@ -65,7 +66,7 @@ def extract_routes(root: Path, files: list[Path]) -> dict[str, str]:
         if not parser:
             return routes
         rel = str(f.relative_to(root)).replace("\\", "/")
-        src = f.read_bytes()
+        src = fileio.read_utf8_bytes(f)
         tree = parser.parse(src)
 
         def visit(node, class_prefix: str):
@@ -133,7 +134,7 @@ def extract_frontend_calls(root: Path, files: list[Path]) -> list[tuple[str, str
         if lang not in ("javascript", "typescript", "tsx", "vue"):
             continue
         rel = str(f.relative_to(root)).replace("\\", "/")
-        raw = f.read_text("utf-8", "ignore")
+        raw = fileio.read_text(f)
         if lang == "vue":
             script, script_lang, _ = _extract_script_from_vue(raw)
             if not script.strip():
@@ -210,7 +211,7 @@ def extract_file_deps(root: Path, files: list[Path]):
         if lang not in ("java", "javascript", "typescript", "tsx", "vue"):
             continue
         try:
-            txt = f.read_text("utf-8", "ignore")
+            txt = fileio.read_text(f)
         except OSError:
             continue
         fileset.add(rel)
@@ -277,7 +278,7 @@ def extract_mybatis(root: Path, files: list[Path], name_to_keys: dict[str, list[
             continue
         rel = str(f.relative_to(root)).replace("\\", "/")
         try:
-            txt = f.read_text("utf-8", "ignore")
+            txt = fileio.read_text(f)
         except OSError:
             continue
         if "<mapper" not in txt or "namespace" not in txt:

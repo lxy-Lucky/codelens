@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import TreeNode
-from app.services import state
+from app.services import fileio, state
 from app.services.languages import detect_language
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -64,5 +64,5 @@ async def file_content(repo_id: str, path: str = Query(...)):
     target = _safe_resolve(root, path)
     if not target.is_file():
         raise HTTPException(404, "文件不存在")
-    content = await asyncio.to_thread(target.read_text, "utf-8", "ignore")
+    content = await asyncio.to_thread(fileio.read_text, target)
     return {"path": path, "language": detect_language(path), "content": content}

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.services import state
+from app.services import fileio, state
 from app.services.languages import detect_language
 from app.services.ollama_client import ollama
 
@@ -39,7 +39,7 @@ async def generate_docs(req: DocRequest):
     target = _safe(Path(repo["path"]), req.path)
     if not target.is_file():
         raise HTTPException(404, "文件不存在")
-    source = await asyncio.to_thread(target.read_text, "utf-8", "ignore")
+    source = await asyncio.to_thread(fileio.read_text, target)
     lang = detect_language(req.path)
 
     messages = [

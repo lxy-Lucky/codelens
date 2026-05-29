@@ -11,7 +11,7 @@ import asyncio
 from fnmatch import fnmatch
 from pathlib import Path
 
-from app.services import graph_enrich, neo4j_store, state
+from app.services import fileio, graph_enrich, neo4j_store, state
 from app.services.ts import executor as ts_executor
 from app.services.languages import LANG_TO_TS_GRAMMAR, SUPPORTED_EXTS, detect_language
 
@@ -82,7 +82,7 @@ def _collect_defs(root: Path, files: list[Path]) -> tuple[list[dict], dict[str, 
         parser = _parser(lang) if lang else None
         if not parser:
             continue
-        src = f.read_bytes()
+        src = fileio.read_utf8_bytes(f)
         tree = parser.parse(src)
         file_trees[rel] = (lang, tree, src)
         targets = DEF_TYPES.get(lang, set())
@@ -141,7 +141,7 @@ def _build_sync(repo_id: str, root_path: str, excludes: list[str]) -> dict:
         node = sym["_node"]
         lang = detect_language(sym["file"])
         call_types = CALL_TYPES.get(lang, set())
-        src = (root / sym["file"]).read_bytes()
+        src = fileio.read_utf8_bytes(root / sym["file"])
 
         def walk_calls(n):
             if n.type in call_types:

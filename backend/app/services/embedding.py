@@ -2,17 +2,25 @@
 import os
 from functools import lru_cache
 
-# 必须在 transformers/tokenizers/torch 导入前设置:
-# - TOKENIZERS_PARALLELISM:子线程调用 fast tokenizer 的 Rust 线程会死锁
-# - OMP/MKL=1:embedding 跑在工作线程(非主线程),OpenMP 并行区在非主线程会死锁;
-#   压到单线程规避(CPU embedding 会慢些,后续上 GPU 再放开)
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-
 from app.config import settings
 
+# 必须在 transformers/tokenizers/torch 导入前设置:
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # 子线程调用 fast tokenizer 会死锁
+# OMP/MKL=1 仅对 CPU embedding 需要(工作线程里 OpenMP 并行区会死锁);
+# GPU 前向在显卡上,无此问题,放开 CPU 线程让分词更快
+if settings.embedding_device == "cpu":
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 MAX_EMBED_CHARS = 8000  # 单 chunk 送入 encode 的字符上限,防止超长块拖死
+
+
+def _is_cuda() -> bool:
+    return settings.embedding_device.startswith("cuda")
+
+
+def _batch_size() -> int:
+    return 64 if _is_cuda() else 16
 
 
 @lru_cache
@@ -20,8 +28,12 @@ def _embedder():
     import torch
     from sentence_transformers import SentenceTransformer
 
-    torch.set_num_threads(1)  # 关键:避免非主线程 OpenMP 并行死锁
-    return SentenceTransformer(settings.embedding_model, device=settings.embedding_device)
+    if settings.embedding_device == "cpu":
+        torch.set_num_threads(1)  # CPU 下避免非主线程 OpenMP 并行死锁
+    model = SentenceTransformer(settings.embedding_model, device=settings.embedding_device)
+    if _is_cuda():
+        model = model.half()  # fp16:显著提速、省一半显存(便于与 LLM 共存)
+    return model
 
 
 @lru_cache
@@ -29,7 +41,8 @@ def _reranker():
     import torch
     from sentence_transformers import CrossEncoder
 
-    torch.set_num_threads(1)  # 同样避免非主线程 OpenMP 死锁
+    if settings.embedding_device == "cpu":
+        torch.set_num_threads(1)
     return CrossEncoder(settings.reranker_model, device=settings.embedding_device, max_length=512)
 
 
@@ -38,7 +51,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         return []
     capped = [t[:MAX_EMBED_CHARS] for t in texts]
     vecs = _embedder().encode(
-        capped, normalize_embeddings=True, batch_size=16, show_progress_bar=False
+        capped, normalize_embeddings=True, batch_size=_batch_size(), show_progress_bar=False
     )
     return [v.tolist() for v in vecs]
 

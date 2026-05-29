@@ -11,16 +11,12 @@ from collections.abc import AsyncIterator
 from fnmatch import fnmatch
 from pathlib import Path
 
-from app.services import bm25_store, embedding, qdrant_store, state
+from app.services import bm25_store, embedding, fileio, qdrant_store, state
 from app.services.chunker import chunk_source
 from app.services.languages import SUPPORTED_EXTS, detect_language
 from app.services.ts import executor as ts_executor
 
 MAX_FILE_BYTES = 1_000_000  # 跳过超大文件
-
-
-def _hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
 
 
 def _is_excluded(rel_parts: tuple[str, ...], excludes: list[str]) -> bool:
@@ -49,59 +45,58 @@ def _log(msg: str) -> None:
     print(f"[index] {msg}", flush=True)
 
 
-def _index_one_file(repo_id: str, root: Path, file: Path) -> tuple[int, str | None]:
-    """处理单个文件,返回 (chunk 数, 语言)。"""
+# 跨文件批量:攒够这么多 chunk 就喂一次 GPU(大批量才高效),或攒够这么多文件
+BATCH_CHUNKS = 256
+BATCH_FILES = 60
+
+
+def _parse_file(repo_id: str, root: Path, file: Path, raw: bytes) -> dict:
+    """只解析切块(CPU,tree-sitter),不嵌入不入库。返回 {rel_path, language, chunks, old_ids}。"""
     rel_path = str(file.relative_to(root)).replace("\\", "/")
     language = detect_language(rel_path)
-    raw = file.read_bytes()
-    if len(raw) > MAX_FILE_BYTES:
-        _log(f"skip(too big {len(raw)}B): {rel_path}")
-        return 0, language
-    source = raw.decode("utf-8", "ignore")
-
-    t0 = time.perf_counter()
-    chunks = chunk_source(source, language) if language else []
-    t_chunk = time.perf_counter() - t0
-    _log(f"parsed {rel_path}: {len(chunks)} chunks in {t_chunk:.2f}s")
-
-    # 删旧向量(级联),再写新的
     old_ids = state.get_chunk_ids_for_file(repo_id, rel_path)
-    if old_ids:
-        qdrant_store.delete_points(old_ids)
+    if len(raw) > MAX_FILE_BYTES:
+        return {"rel_path": rel_path, "language": language, "chunks": [], "old_ids": old_ids}
+    source = fileio.decode_bytes(raw)  # 自动检测编码(cp932/gb2312…),避免乱码
+    chunks = chunk_source(source, language) if language else []
+    return {"rel_path": rel_path, "language": language, "chunks": chunks, "old_ids": old_ids}
 
-    if not chunks:
-        state.replace_file_chunks(repo_id, rel_path, [])
-        return 0, language
 
-    texts = [c.text for c in chunks]
-    _log(f"embedding {rel_path}: {len(texts)} chunks, maxlen={max(len(t) for t in texts)} …")
-    t1 = time.perf_counter()
-    vectors = embedding.embed_texts(texts)
-    _log(f"embedded {rel_path}: {len(texts)} chunks in {time.perf_counter() - t1:.2f}s")
-    points = []
-    chunk_ids = []
-    for c, vec in zip(chunks, vectors):
-        cid = str(uuid.uuid4())
-        chunk_ids.append(cid)
-        points.append({
-            "id": cid,
-            "vector": vec,
-            "payload": {
-                "repo_id": repo_id,
-                "rel_path": rel_path,
-                "symbol": c.symbol,
-                "kind": c.kind,
-                "start_line": c.start_line,
-                "end_line": c.end_line,
-                "language": language,
-                "text": c.text,
-            },
-        })
-    t2 = time.perf_counter()
-    qdrant_store.upsert_chunks(points)
-    _log(f"upserted {rel_path}: {len(points)} points in {time.perf_counter() - t2:.2f}s")
-    state.replace_file_chunks(repo_id, rel_path, chunk_ids)
-    return len(chunks), language
+def _embed_and_store(repo_id: str, items: list[dict]) -> None:
+    """对一批文件的所有 chunk 一次性嵌入(大批量,GPU 高效),再按文件入库。"""
+    all_texts = [c.text for it in items for c in it["chunks"]]
+    t0 = time.perf_counter()
+    vectors = embedding.embed_texts(all_texts) if all_texts else []
+    if all_texts:
+        _log(f"embedded batch: {len(all_texts)} chunks / {len(items)} files in "
+             f"{time.perf_counter() - t0:.2f}s")
+
+    vi = 0
+    for it in items:
+        rel_path, language, chunks, old_ids = (
+            it["rel_path"], it["language"], it["chunks"], it["old_ids"])
+        if old_ids:
+            qdrant_store.delete_points(old_ids)
+        if not chunks:
+            state.replace_file_chunks(repo_id, rel_path, [])
+            continue
+        points, chunk_ids = [], []
+        for c in chunks:
+            vec = vectors[vi]; vi += 1
+            cid = str(uuid.uuid4())
+            chunk_ids.append(cid)
+            points.append({
+                "id": cid,
+                "vector": vec,
+                "payload": {
+                    "repo_id": repo_id, "rel_path": rel_path,
+                    "symbol": c.symbol, "kind": c.kind,
+                    "start_line": c.start_line, "end_line": c.end_line,
+                    "language": language, "text": c.text,
+                },
+            })
+        qdrant_store.upsert_chunks(points)
+        state.replace_file_chunks(repo_id, rel_path, chunk_ids)
 
 
 async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> AsyncIterator[dict]:
@@ -125,12 +120,35 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
     lang_stats: dict[str, int] = {}
     errors = 0
 
+    # 缓冲一批文件再统一嵌入入库
+    buffer: list[dict] = []          # 解析结果 + fhash + idx
+    buffered_chunks = 0
+    done_count = 0
+
+    async def flush() -> int:
+        """嵌入+入库当前缓冲,返回处理的文件数;失败抛出由调用方处理。"""
+        nonlocal buffer, buffered_chunks
+        if not buffer:
+            return 0
+        items = buffer
+        await loop.run_in_executor(ts_executor, _embed_and_store, repo_id,
+                                   [it["parsed"] for it in items])
+        for it in items:
+            p = it["parsed"]
+            await asyncio.to_thread(state.upsert_file, repo_id, p["rel_path"], it["fhash"], p["language"])
+            if p["language"]:
+                lang_stats[p["language"]] = lang_stats.get(p["language"], 0) + 1
+        n = len(items)
+        buffer = []
+        buffered_chunks = 0
+        return n
+
     for i, file in enumerate(files):
         rel_path = str(file.relative_to(root)).replace("\\", "/")
         seen.add(rel_path)
         try:
             raw = await asyncio.to_thread(file.read_bytes)
-            fhash = _hash(raw.decode("utf-8", "ignore"))
+            fhash = hashlib.sha256(raw).hexdigest()  # 直接哈希原始字节,稳定且与编码无关
             if prev_hashes.get(rel_path) == fhash:
                 lang = detect_language(rel_path)
                 if lang:
@@ -138,15 +156,25 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
                 yield {"stage": "skip", "current": i + 1, "total": total, "file": rel_path}
                 continue
             yield {"stage": "processing", "current": i + 1, "total": total, "file": rel_path}
-            _, lang = await loop.run_in_executor(ts_executor, _index_one_file, repo_id, root, file)
-            await asyncio.to_thread(state.upsert_file, repo_id, rel_path, fhash, lang)
-            if lang:
-                lang_stats[lang] = lang_stats.get(lang, 0) + 1
-            yield {"stage": "indexed", "current": i + 1, "total": total, "file": rel_path}
+            parsed = await loop.run_in_executor(ts_executor, _parse_file, repo_id, root, file, raw)
+            buffer.append({"parsed": parsed, "fhash": fhash})
+            buffered_chunks += len(parsed["chunks"])
+            if buffered_chunks >= BATCH_CHUNKS or len(buffer) >= BATCH_FILES:
+                n = await flush()
+                done_count += n
+                yield {"stage": "indexed", "current": done_count, "total": total, "file": rel_path}
         except Exception as e:  # noqa: BLE001 单文件失败不阻断
             errors += 1
             yield {"stage": "file_error", "current": i + 1, "total": total,
                    "file": rel_path, "message": str(e)}
+
+    # 收尾:剩余缓冲
+    try:
+        n = await flush()
+        done_count += n
+    except Exception as e:  # noqa: BLE001
+        errors += 1
+        yield {"stage": "file_error", "file": "(batch)", "message": str(e)}
 
     # 清理已删除的文件(上次有、这次没见到)
     for stale in set(prev_hashes) - seen:
