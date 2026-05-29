@@ -6,9 +6,9 @@ from app.config import settings
 
 # 必须在 transformers/tokenizers/torch 导入前设置:
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # 子线程调用 fast tokenizer 会死锁
-# OMP/MKL=1 仅对 CPU embedding 需要(工作线程里 OpenMP 并行区会死锁);
-# GPU 前向在显卡上,无此问题,放开 CPU 线程让分词更快
-if settings.embedding_device == "cpu":
+# OMP/MKL=1:只要 embedding 或 reranker 任一在 CPU 跑,其在工作线程里的 OpenMP 并行区就会死锁,
+# 必须压到单线程规避。GPU 前向在显卡上无此问题。
+if "cpu" in (settings.embedding_device, settings.reranker_device):
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
 
@@ -41,9 +41,13 @@ def _reranker():
     import torch
     from sentence_transformers import CrossEncoder
 
-    if settings.embedding_device == "cpu":
-        torch.set_num_threads(1)
-    return CrossEncoder(settings.reranker_model, device=settings.embedding_device, max_length=512)
+    dev = settings.reranker_device
+    if dev == "cpu":
+        torch.set_num_threads(1)  # CPU 下避免非主线程 OpenMP 并行死锁
+    ce = CrossEncoder(settings.reranker_model, device=dev, max_length=512)
+    if dev.startswith("cuda"):
+        ce.model.half()
+    return ce
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:

@@ -10,12 +10,14 @@ class Settings(BaseSettings):
     # Ollama / LLM
     ollama_base_url: str = "http://localhost:11434"
     llm_model: str = "qwen3.5:9b"
-    llm_num_ctx: int = 24576
+    llm_num_ctx: int = 16384
 
     # Embedding / reranker
     embedding_model: str = "BAAI/bge-m3"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     embedding_device: str = "cuda"
+    # reranker 默认放 CPU:搜索时才用、批量小,放 CPU 省显存、避免与 LLM 抢 16GB
+    reranker_device: str = "cpu"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
