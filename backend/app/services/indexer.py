@@ -8,6 +8,7 @@ import hashlib
 import time
 import uuid
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -17,6 +18,9 @@ from app.services.languages import SUPPORTED_EXTS, detect_language
 from app.services.ts import executor as ts_executor
 
 MAX_FILE_BYTES = 1_000_000  # 跳过超大文件
+
+# 嵌入+入库专用线程,与解析(ts_executor / tree-sitter 线程)分离,实现 CPU 解析与 GPU 嵌入重叠
+embed_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="codelens-embed")
 
 
 def _is_excluded(rel_parts: tuple[str, ...], excludes: list[str]) -> bool:
@@ -45,8 +49,7 @@ def _log(msg: str) -> None:
     print(f"[index] {msg}", flush=True)
 
 
-# 跨文件批量:攒够这么多 chunk 就喂一次 GPU(大批量才高效),或攒够这么多文件
-BATCH_CHUNKS = 256
+# 每批文件数:一批文件的所有 chunk 一次性喂 GPU(大批量才高效)
 BATCH_FILES = 60
 
 
@@ -119,62 +122,68 @@ async def index_repo(repo_id: str, root_path: str, excludes: list[str]) -> Async
     seen: set[str] = set()
     lang_stats: dict[str, int] = {}
     errors = 0
+    processed = 0
 
-    # 缓冲一批文件再统一嵌入入库
-    buffer: list[dict] = []          # 解析结果 + fhash + idx
-    buffered_chunks = 0
-    done_count = 0
+    file_batches = [files[i:i + BATCH_FILES] for i in range(0, total, BATCH_FILES)]
 
-    async def flush() -> int:
-        """嵌入+入库当前缓冲,返回处理的文件数;失败抛出由调用方处理。"""
-        nonlocal buffer, buffered_chunks
-        if not buffer:
-            return 0
-        items = buffer
-        await loop.run_in_executor(ts_executor, _embed_and_store, repo_id,
-                                   [it["parsed"] for it in items])
-        for it in items:
-            p = it["parsed"]
-            await asyncio.to_thread(state.upsert_file, repo_id, p["rel_path"], it["fhash"], p["language"])
-            if p["language"]:
-                lang_stats[p["language"]] = lang_stats.get(p["language"], 0) + 1
-        n = len(items)
-        buffer = []
-        buffered_chunks = 0
-        return n
+    async def parse_batch(batch_files: list[Path]) -> list[dict]:
+        """读取+哈希+增量判断+tree-sitter 解析(在 ts 线程),不嵌入。返回每文件结果。"""
+        out: list[dict] = []
+        for file in batch_files:
+            rel = str(file.relative_to(root)).replace("\\", "/")
+            seen.add(rel)
+            try:
+                raw = await asyncio.to_thread(file.read_bytes)
+                fhash = hashlib.sha256(raw).hexdigest()  # 直接哈希原始字节,稳定且与编码无关
+                if prev_hashes.get(rel) == fhash:
+                    out.append({"status": "skip", "rel": rel})
+                    continue
+                parsed = await loop.run_in_executor(ts_executor, _parse_file, repo_id, root, file, raw)
+                out.append({"status": "parse", "rel": rel, "parsed": parsed, "fhash": fhash})
+            except Exception as e:  # noqa: BLE001
+                out.append({"status": "error", "rel": rel, "msg": str(e)})
+        return out
 
-    for i, file in enumerate(files):
-        rel_path = str(file.relative_to(root)).replace("\\", "/")
-        seen.add(rel_path)
-        try:
-            raw = await asyncio.to_thread(file.read_bytes)
-            fhash = hashlib.sha256(raw).hexdigest()  # 直接哈希原始字节,稳定且与编码无关
-            if prev_hashes.get(rel_path) == fhash:
-                lang = detect_language(rel_path)
+    # 预取一批:在 embed 线程嵌入当前批(GPU)的同时,后台并行解析下一批(CPU)→ 重叠
+    prefetch = asyncio.create_task(parse_batch(file_batches[0])) if file_batches else None
+    for k in range(len(file_batches)):
+        results = await prefetch
+        if k + 1 < len(file_batches):
+            prefetch = asyncio.create_task(parse_batch(file_batches[k + 1]))
+
+        for r in results:
+            if r["status"] == "skip":
+                lang = detect_language(r["rel"])
                 if lang:
                     lang_stats[lang] = lang_stats.get(lang, 0) + 1
-                yield {"stage": "skip", "current": i + 1, "total": total, "file": rel_path}
-                continue
-            yield {"stage": "processing", "current": i + 1, "total": total, "file": rel_path}
-            parsed = await loop.run_in_executor(ts_executor, _parse_file, repo_id, root, file, raw)
-            buffer.append({"parsed": parsed, "fhash": fhash})
-            buffered_chunks += len(parsed["chunks"])
-            if buffered_chunks >= BATCH_CHUNKS or len(buffer) >= BATCH_FILES:
-                n = await flush()
-                done_count += n
-                yield {"stage": "indexed", "current": done_count, "total": total, "file": rel_path}
-        except Exception as e:  # noqa: BLE001 单文件失败不阻断
-            errors += 1
-            yield {"stage": "file_error", "current": i + 1, "total": total,
-                   "file": rel_path, "message": str(e)}
+                processed += 1
+                yield {"stage": "skip", "current": processed, "total": total, "file": r["rel"]}
+            elif r["status"] == "error":
+                errors += 1
+                processed += 1
+                yield {"stage": "file_error", "current": processed, "total": total,
+                       "file": r["rel"], "message": r["msg"]}
 
-    # 收尾:剩余缓冲
-    try:
-        n = await flush()
-        done_count += n
-    except Exception as e:  # noqa: BLE001
-        errors += 1
-        yield {"stage": "file_error", "file": "(batch)", "message": str(e)}
+        parsed_items = [r for r in results if r["status"] == "parse"]
+        if not parsed_items:
+            continue
+        try:
+            await loop.run_in_executor(
+                embed_executor, _embed_and_store, repo_id, [r["parsed"] for r in parsed_items])
+            for r in parsed_items:
+                p = r["parsed"]
+                await asyncio.to_thread(
+                    state.upsert_file, repo_id, p["rel_path"], r["fhash"], p["language"])
+                if p["language"]:
+                    lang_stats[p["language"]] = lang_stats.get(p["language"], 0) + 1
+                processed += 1
+            yield {"stage": "indexed", "current": processed, "total": total,
+                   "file": parsed_items[-1]["rel"]}
+        except Exception as e:  # noqa: BLE001 整批失败不阻断,这批下次重试
+            errors += len(parsed_items)
+            processed += len(parsed_items)
+            yield {"stage": "file_error", "current": processed, "total": total,
+                   "file": "(batch)", "message": str(e)}
 
     # 清理已删除的文件(上次有、这次没见到)
     for stale in set(prev_hashes) - seen:

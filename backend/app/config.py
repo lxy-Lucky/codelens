@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Ollama / LLM
     ollama_base_url: str = "http://localhost:11434"
     llm_model: str = "qwen3.5:9b"
-    llm_num_ctx: int = 16384
+    llm_num_ctx: int = 24576
 
     # Embedding / reranker
     embedding_model: str = "BAAI/bge-m3"
