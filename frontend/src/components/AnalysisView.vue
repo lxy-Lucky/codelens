@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '../api/client'
 import type { FileRef } from '../api/types'
 import { useApp } from '../stores/app'
 
+const { t } = useI18n()
 const app = useApp()
 const loading = ref(false)
 const building = ref(false)
@@ -28,7 +30,7 @@ async function load() {
     imports.value = d.imports
     importedBy.value = d.imported_by
   } catch (e: any) {
-    errorMsg.value = '加载失败:' + (e?.response?.data?.detail ?? e?.message ?? e)
+    errorMsg.value = t('deps.loadFail', { msg: e?.response?.data?.detail ?? e?.message ?? e })
   } finally {
     loading.value = false
   }
@@ -41,10 +43,10 @@ async function doBuild() {
   errorMsg.value = ''
   try {
     const r: any = await app.buildGraph()
-    status.value = `构建完成:${r.symbols} 节点 / ${r.dep_edges ?? '?'} 依赖边`
+    status.value = t('deps.buildDone', { symbols: r.symbols, edges: r.dep_edges ?? '?' })
     await load()
   } catch (e: any) {
-    errorMsg.value = '构建失败(Neo4j 是否启动?):' + (e?.response?.data?.detail ?? e?.message ?? e)
+    errorMsg.value = t('deps.buildFail', { msg: e?.response?.data?.detail ?? e?.message ?? e })
   } finally {
     building.value = false
   }
@@ -61,30 +63,30 @@ watch(() => [app.openFile?.path, app.currentRepoId], load, { immediate: true })
         :disabled="building || !app.currentRepoId"
         @click="doBuild"
       >
-        {{ building ? '构建中…' : '构建图谱' }}
+        {{ building ? t('deps.building') : t('deps.build') }}
       </button>
       <span v-if="app.openFile" class="text-txt-secondary font-mono truncate">{{ app.openFile.path }}</span>
-      <button v-if="app.openFile" class="ml-auto text-txt-tertiary hover:text-accent" title="刷新" @click="load">↻</button>
+      <button v-if="app.openFile" class="ml-auto text-txt-tertiary hover:text-accent" :title="t('common.refresh')" @click="load">↻</button>
     </div>
 
     <div class="flex-1 overflow-y-auto px-6 py-5">
       <div v-if="!app.openFile" class="p-16 text-center text-txt-tertiary text-[0.8rem]">
-        打开一个文件查看它的依赖关系
+        {{ t('deps.emptyHint') }}
       </div>
       <template v-else>
         <div v-if="errorMsg" class="mb-3 text-err text-[0.76rem]">{{ errorMsg }}</div>
         <div v-if="status" class="mb-3 text-txt-secondary text-[0.76rem]">{{ status }}</div>
         <div v-if="loading" class="flex items-center gap-2 text-txt-tertiary text-[0.78rem]">
-          <div class="w-5 h-5 border-2 border-border-medium border-t-accent rounded-full animate-spin" />加载中…
+          <div class="w-5 h-5 border-2 border-border-medium border-t-accent rounded-full animate-spin" />{{ t('common.loading') }}
         </div>
         <template v-else>
           <div v-if="!imports.length && !importedBy.length" class="p-12 text-center text-txt-tertiary text-[0.78rem]">
-            没有依赖数据。若还没构建图谱,请点上方「构建图谱」。
+            {{ t('deps.noData') }}
           </div>
 
           <section v-if="imports.length" class="mb-6">
             <div class="text-[0.72rem] font-semibold uppercase tracking-wider text-txt-tertiary mb-2">
-              ↗ 依赖的文件(import) · {{ imports.length }}
+              {{ t('deps.imports', { n: imports.length }) }}
             </div>
             <div class="grid grid-cols-1 gap-2">
               <div
@@ -104,7 +106,7 @@ watch(() => [app.openFile?.path, app.currentRepoId], load, { immediate: true })
 
           <section v-if="importedBy.length">
             <div class="text-[0.72rem] font-semibold uppercase tracking-wider text-txt-tertiary mb-2">
-              ↙ 被依赖(imported by) · {{ importedBy.length }}
+              {{ t('deps.importedBy', { n: importedBy.length }) }}
             </div>
             <div class="grid grid-cols-1 gap-2">
               <div

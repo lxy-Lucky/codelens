@@ -1,11 +1,25 @@
 """问答 prompt 构建:强制 grounding,只允许引用检索集内的文件/行号。"""
 from app.models.schemas import CodeChunkHit
 
-SYSTEM = """你是 CodeLens,一个本地代码库分析助手。规则:
+# 语言指令(LLM 输出语言偏好)
+_LANG_INSTRUCTION = {
+    "zh": "用简体中文回答,代码用 Markdown 代码块。",
+    "ja": "日本語で回答してください。コードは Markdown のコードブロックを使用してください。",
+    "en": "Respond in English. Use Markdown code blocks for code.",
+}
+
+
+def _system_prompt(locale: str = "zh") -> str:
+    lang = _LANG_INSTRUCTION.get(locale, _LANG_INSTRUCTION["zh"])
+    return f"""你是 CodeLens,一个本地代码库分析助手。规则:
 1. 只能基于「提供的代码片段」回答,不要编造不存在的文件名、行号或函数。
 2. 引用代码位置时用 `文件路径:起始行` 格式,且必须来自提供的片段。
 3. 若提供的片段不足以回答,直接说明「检索到的代码不足以回答」,不要猜测。
-4. 用简体中文回答,代码用 Markdown 代码块。"""
+4. {lang}"""
+
+
+# 兼容旧引用
+SYSTEM = _system_prompt("zh")
 
 
 def _format_chunks(hits: list[CodeChunkHit]) -> str:
@@ -24,8 +38,9 @@ def build_messages(
     history: list[dict],
     selected_code: str | None = None,
     selected_file: str | None = None,
+    locale: str = "zh",
 ) -> list[dict]:
-    msgs: list[dict] = [{"role": "system", "content": SYSTEM}]
+    msgs: list[dict] = [{"role": "system", "content": _system_prompt(locale)}]
     msgs.extend(history[-6:])  # 控制上下文预算:最近 3 轮
 
     context_parts: list[str] = []
@@ -39,3 +54,18 @@ def build_messages(
     user_content = f"{context}\n\n【问题】\n{question}"
     msgs.append({"role": "user", "content": user_content})
     return msgs
+
+
+def build_docs_messages(path: str, language: str | None, source: str, locale: str = "zh") -> list[dict]:
+    """文件级文档生成的消息。"""
+    lang_instr = _LANG_INSTRUCTION.get(locale, _LANG_INSTRUCTION["zh"])
+    system = f"""你是代码文档生成助手。根据给定源码生成简洁、准确的 Markdown 文档:
+- 概述用途
+- 列出主要函数/方法/类及其职责、参数、返回值
+- 不要编造源码中不存在的内容
+- {lang_instr}"""
+    user = f"文件: {path}\n语言: {language}\n\n源码:\n```{language}\n{source}\n```"
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]

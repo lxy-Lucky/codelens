@@ -1,13 +1,17 @@
 import axios from 'axios'
-import type { CodeChunkHit, FileDeps, RepoInfo, Subgraph, TreeNode } from './types'
+import type { CodeChunkHit, FileDeps, FsListResp, RepoInfo, Subgraph, TreeNode } from './types'
 
 const http = axios.create({ baseURL: '' })
 
 export const api = {
   listRepos: () => http.get<RepoInfo[]>('/api/repos').then((r) => r.data),
-  createRepo: (path: string, name?: string) =>
-    http.post<RepoInfo>('/api/repos', { path, name }).then((r) => r.data),
+  createRepo: (path: string, name?: string, excludes?: string[]) =>
+    http
+      .post<RepoInfo>('/api/repos', { path, name, ...(excludes ? { excludes } : {}) })
+      .then((r) => r.data),
   deleteRepo: (id: string) => http.delete(`/api/repos/${id}`).then((r) => r.data),
+  fsList: (path: string) =>
+    http.get<FsListResp>('/api/fs/list', { params: { path } }).then((r) => r.data),
   fileTree: (id: string) => http.get<TreeNode[]>(`/api/files/${id}/tree`).then((r) => r.data),
   fileContent: (id: string, path: string) =>
     http

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '../api/client'
 import type { GraphNode } from '../api/types'
 import { useApp } from '../stores/app'
 
+const { t } = useI18n()
 const app = useApp()
 const container = ref<HTMLElement | null>(null)
 const loading = ref(false)
@@ -66,7 +68,7 @@ async function render() {
     nodeCount.value = g.nodes.length
     if (!g.nodes.length) {
       if (container.value) container.value.innerHTML = ''
-      status.value = '该符号没有调用关系数据。若还没构建图谱,请先点「构建图谱」。'
+      status.value = t('graph.noData')
       return
     }
     const { text, byId } = buildMermaid(g.nodes, g.edges, app.graphTarget.symbolKey)
@@ -94,7 +96,7 @@ async function render() {
       })
     })
   } catch (e: any) {
-    errorMsg.value = '渲染失败:' + (e?.message ?? e)
+    errorMsg.value = t('graph.renderFail', { msg: e?.message ?? e })
   } finally {
     loading.value = false
   }
@@ -107,10 +109,10 @@ async function doBuild() {
   errorMsg.value = ''
   try {
     const r = await app.buildGraph()
-    status.value = `构建完成:${r.symbols} 符号 / ${r.edges} 边`
+    status.value = t('graph.buildDone', { symbols: r.symbols, edges: r.edges })
     await render()
   } catch (e: any) {
-    errorMsg.value = '构建失败(Neo4j 是否启动?):' + (e?.response?.data?.detail ?? e?.message ?? e)
+    errorMsg.value = t('graph.buildFail', { msg: e?.response?.data?.detail ?? e?.message ?? e })
   } finally {
     building.value = false
   }
@@ -129,10 +131,10 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
         :disabled="building || !app.currentRepoId"
         @click="doBuild"
       >
-        {{ building ? '构建中…' : '构建图谱' }}
+        {{ building ? t('graph.building') : t('graph.build') }}
       </button>
       <div class="flex items-center gap-1.5 text-txt-tertiary">
-        <span>跳数</span>
+        <span>{{ t('graph.hops') }}</span>
         <select v-model.number="app.graphHops" class="bg-bg-tertiary border border-border-subtle rounded px-1.5 py-0.5 outline-none">
           <option :value="1">1</option>
           <option :value="2">2</option>
@@ -140,19 +142,19 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
         </select>
       </div>
       <span v-if="app.graphTarget" class="text-txt-secondary font-mono truncate">
-        中心:{{ app.graphTarget.label }}
+        {{ t('graph.center', { label: app.graphTarget.label }) }}
       </span>
-      <span class="ml-auto text-txt-tertiary">{{ nodeCount ? nodeCount + ' 节点' : '' }}</span>
+      <span class="ml-auto text-txt-tertiary">{{ nodeCount ? t('graph.nodeCount', { n: nodeCount }) : '' }}</span>
     </div>
 
     <!-- canvas -->
     <div class="flex-1 overflow-auto p-4 relative">
       <div v-if="!app.graphTarget" class="p-16 text-center text-txt-tertiary text-[0.8rem]">
-        在检索结果或代码里右键某个函数 →「查看调用图」
+        {{ t('graph.emptyHint') }}
       </div>
       <div v-else-if="loading" class="flex flex-col items-center justify-center py-20 gap-3 text-txt-tertiary">
         <div class="w-7 h-7 border-2 border-border-medium border-t-accent rounded-full animate-spin" />
-        <div class="text-[0.78rem]">加载调用图…</div>
+        <div class="text-[0.78rem]">{{ t('graph.loadingTip') }}</div>
       </div>
       <div v-if="errorMsg" class="text-[0.76rem] text-err mb-3">{{ errorMsg }}</div>
       <div v-if="status" class="text-[0.76rem] text-txt-secondary mb-3">{{ status }}</div>
@@ -164,9 +166,9 @@ watch(() => [app.graphTarget?.symbolKey, app.graphHops], render)
       v-if="app.graphTarget && nodeCount"
       class="absolute bottom-4 right-4 z-10 flex flex-col gap-1"
     >
-      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" title="放大" @click="zoom(0.2)">＋</button>
-      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" title="缩小" @click="zoom(-0.2)">－</button>
-      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-tertiary hover:text-accent hover:border-accent text-[0.6rem] leading-none shadow" title="重置" @click="zoomReset">{{ Math.round(scale * 100) }}%</button>
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" :title="t('graph.zoomIn')" @click="zoom(0.2)">＋</button>
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-secondary hover:text-accent hover:border-accent text-base leading-none shadow" :title="t('graph.zoomOut')" @click="zoom(-0.2)">－</button>
+      <button class="w-8 h-8 grid place-items-center rounded-md bg-bg-elevated border border-border-medium text-txt-tertiary hover:text-accent hover:border-accent text-[0.6rem] leading-none shadow" :title="t('graph.zoomReset')" @click="zoomReset">{{ Math.round(scale * 100) }}%</button>
     </div>
   </div>
 </template>

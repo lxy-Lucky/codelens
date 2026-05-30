@@ -75,3 +75,14 @@ export interface FileDeps {
   imports: FileRef[]
   imported_by: FileRef[]
 }
+
+export interface FsEntry {
+  name: string
+  path: string
+}
+
+export interface FsListResp {
+  path: string
+  exists: boolean
+  entries: FsEntry[]
+}

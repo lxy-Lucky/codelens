@@ -1,27 +1,23 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.services import fileio, state
+from app.services import fileio, prompts, state
 from app.services.languages import detect_language
 from app.services.ollama_client import ollama
 
 router = APIRouter(prefix="/api/docs", tags=["docs"])
 
-DOC_SYSTEM = """你是代码文档生成助手。根据给定源码生成简洁、准确的 Markdown 文档:
-- 概述用途
-- 列出主要函数/方法/类及其职责、参数、返回值
-- 不要编造源码中不存在的内容
-- 用简体中文"""
-
 
 class DocRequest(BaseModel):
     repo_id: str
     path: str  # 相对路径
+    locale: Literal["zh", "ja", "en"] = "zh"
 
 
 def _safe(root: Path, rel: str) -> Path:
@@ -42,10 +38,7 @@ async def generate_docs(req: DocRequest):
     source = await asyncio.to_thread(fileio.read_text, target)
     lang = detect_language(req.path)
 
-    messages = [
-        {"role": "system", "content": DOC_SYSTEM},
-        {"role": "user", "content": f"文件: {req.path}\n语言: {lang}\n\n源码:\n```{lang}\n{source}\n```"},
-    ]
+    messages = prompts.build_docs_messages(req.path, lang, source, locale=req.locale)
 
     async def gen():
         try:

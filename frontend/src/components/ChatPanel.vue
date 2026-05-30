@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { streamSSE } from '../api/client'
 import type { ChatMsg, ChatRef } from '../api/types'
 import { useApp } from '../stores/app'
 
+const { t, locale } = useI18n()
 const app = useApp()
 const input = ref('')
 const streaming = ref(false)
@@ -47,18 +49,19 @@ async function send() {
         selected_file: sel?.file ?? null,
         selected_range: sel?.range ?? null,
         languages: app.searchLanguages,
+        locale: locale.value,
       },
       (ev) => {
         if (ev.type === 'refs') ai.refs = ev.refs
         else if (ev.type === 'token') {
           ai.content += ev.text
           scrollDown()
-        } else if (ev.type === 'error') ai.content += `\n\n_出错: ${ev.message}_`
+        } else if (ev.type === 'error') ai.content += t('chat.chatErr', { msg: ev.message })
       },
       abort.signal,
     )
   } catch (e: any) {
-    if (e?.name !== 'AbortError') ai.content += `\n\n_请求失败: ${e}_`
+    if (e?.name !== 'AbortError') ai.content += t('chat.reqFail', { msg: String(e) })
   } finally {
     streaming.value = false
     abort = null
@@ -82,7 +85,11 @@ function rerunSearch(q: string) {
   app.runSearch(q)
 }
 
-// 流式中且当前助手消息还没内容 → 显示打字动效
+function removeHistory(q: string, e: MouseEvent) {
+  e.stopPropagation()
+  app.removeSearchHistory(q)
+}
+
 function isTyping(m: ChatMsg, idx: number): boolean {
   return streaming.value && idx === app.chatMessages.length - 1 && m.role === 'assistant' && !m.content
 }
@@ -91,35 +98,44 @@ function isTyping(m: ChatMsg, idx: number): boolean {
 <template>
   <aside class="h-full flex flex-col bg-bg-secondary border-l border-border-subtle overflow-hidden">
     <div class="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-      <div class="font-semibold text-[0.84rem] flex items-center gap-2">💬 代码助手</div>
+      <div class="font-semibold text-[0.84rem] flex items-center gap-2">{{ t('chat.title') }}</div>
       <div class="flex items-center gap-1 relative">
         <button
           class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover"
-          title="检索历史"
+          :title="t('chat.history')"
           @click="showHistory = !showHistory"
         >
           🕘
         </button>
-        <button class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover" title="清空对话" @click="clearChat">🗑</button>
+        <button class="w-7 h-7 grid place-items-center rounded text-txt-tertiary hover:bg-bg-hover" :title="t('chat.clearChat')" @click="clearChat">🗑</button>
 
         <!-- 检索历史下拉 -->
         <div
           v-if="showHistory"
-          class="absolute right-0 top-9 w-64 max-h-72 overflow-y-auto bg-bg-elevated border border-border-medium rounded-lg shadow-lg z-50 py-1"
+          class="absolute right-0 top-9 w-72 max-h-72 overflow-y-auto bg-bg-elevated border border-border-medium rounded-lg shadow-lg z-50 py-1"
         >
-          <div class="px-3 py-1.5 text-[0.62rem] uppercase tracking-wider text-txt-tertiary">语义检索历史</div>
-          <div v-if="!app.searchHistory.length" class="px-3 py-2 text-[0.72rem] text-txt-tertiary">暂无历史</div>
+          <div class="px-3 py-1.5 text-[0.62rem] uppercase tracking-wider text-txt-tertiary">{{ t('chat.historyTitle') }}</div>
+          <div v-if="!app.searchHistory.length" class="px-3 py-2 text-[0.72rem] text-txt-tertiary">{{ t('chat.noHistory') }}</div>
           <div
             v-for="(q, i) in app.searchHistory"
             :key="i"
-            class="group flex items-center gap-2 px-3 py-1.5 hover:bg-bg-hover cursor-default"
+            class="group flex items-center gap-1.5 px-3 py-1.5 hover:bg-bg-hover cursor-pointer"
+            :title="q"
+            @click="rerunSearch(q)"
           >
-            <span class="flex-1 truncate text-[0.74rem] text-txt-secondary">{{ q }}</span>
+            <span class="flex-1 truncate text-[0.74rem] text-txt-secondary group-hover:text-txt-primary">{{ q }}</span>
             <button
               class="opacity-0 group-hover:opacity-100 text-[0.64rem] px-1.5 py-0.5 rounded border border-border-subtle text-accent hover:bg-accent/10 whitespace-nowrap"
-              @click="rerunSearch(q)"
+              @click.stop="rerunSearch(q)"
             >
-              重新执行
+              {{ t('chat.rerun') }}
+            </button>
+            <button
+              class="opacity-0 group-hover:opacity-100 w-5 h-5 grid place-items-center rounded text-txt-tertiary hover:text-err hover:bg-err/10"
+              :title="t('chat.deleteHistory')"
+              @click="removeHistory(q, $event)"
+            >
+              ✕
             </button>
           </div>
         </div>
@@ -127,9 +143,7 @@ function isTyping(m: ChatMsg, idx: number): boolean {
     </div>
 
     <div ref="listEl" class="flex-1 overflow-y-auto p-4 space-y-3.5">
-      <div v-if="!app.chatMessages.length" class="text-[0.78rem] text-txt-secondary leading-relaxed">
-        用自然语言提问。<strong class="text-txt-primary">在编辑器里选中代码</strong>后提问,会针对选中片段;不选则基于整个代码库。
-      </div>
+      <div v-if="!app.chatMessages.length" class="text-[0.78rem] text-txt-secondary leading-relaxed" v-html="render(t('chat.emptyHint'))" />
       <div v-for="(m, i) in app.chatMessages" :key="i" class="flex gap-2.5" :class="m.role === 'user' ? 'flex-row-reverse' : ''">
         <div
           class="w-7 h-7 rounded-md grid place-items-center text-[0.7rem] font-semibold shrink-0"
@@ -142,7 +156,6 @@ function isTyping(m: ChatMsg, idx: number): boolean {
             class="px-3.5 py-2.5 rounded-lg text-[0.78rem] leading-relaxed break-words overflow-hidden"
             :class="m.role === 'user' ? 'bg-accent/10 text-txt-primary' : 'bg-bg-tertiary border border-border-subtle text-txt-secondary'"
           >
-            <!-- 打字动效 -->
             <div v-if="isTyping(m, i)" class="flex gap-1 py-1">
               <span class="w-1.5 h-1.5 rounded-full bg-txt-tertiary animate-bounce" style="animation-delay:0ms" />
               <span class="w-1.5 h-1.5 rounded-full bg-txt-tertiary animate-bounce" style="animation-delay:150ms" />
@@ -168,9 +181,10 @@ function isTyping(m: ChatMsg, idx: number): boolean {
       </div>
     </div>
 
-    <!-- selection context banner -->
     <div v-if="app.selection" class="mx-4 mb-1.5 px-3 py-1.5 bg-accent/10 border border-accent/20 rounded text-[0.68rem] text-accent flex items-center gap-2">
-      <span class="truncate">已选中 {{ app.selection.file.split('/').pop() }}:{{ app.selection.range[0] }}-{{ app.selection.range[1] }},提问将基于此片段</span>
+      <span class="truncate">
+        {{ t('chat.selectionTip', { file: app.selection.file.split('/').pop(), a: app.selection.range[0], b: app.selection.range[1] }) }}
+      </span>
       <button class="ml-auto hover:text-txt-primary" @click="app.setSelection(null)">✕</button>
     </div>
 
@@ -179,7 +193,7 @@ function isTyping(m: ChatMsg, idx: number): boolean {
         <textarea
           v-model="input"
           rows="1"
-          placeholder="输入问题…"
+          :placeholder="t('chat.inputPlaceholder')"
           class="flex-1 px-3.5 py-2.5 bg-bg-tertiary border border-border-subtle rounded-lg text-[0.82rem] outline-none focus:border-accent resize-none max-h-32"
           @keydown.enter.exact.prevent="send"
         />
@@ -193,7 +207,7 @@ function isTyping(m: ChatMsg, idx: number): boolean {
         </button>
         <button v-else class="w-10 h-10 bg-err/80 rounded-lg text-white grid place-items-center" @click="stop">■</button>
       </div>
-      <div class="text-[0.6rem] text-txt-tertiary mt-1.5">Enter 发送 · Shift+Enter 换行</div>
+      <div class="text-[0.6rem] text-txt-tertiary mt-1.5">{{ t('chat.enterTip') }}</div>
     </div>
   </aside>
 </template>

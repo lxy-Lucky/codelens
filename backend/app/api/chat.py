@@ -26,6 +26,7 @@ async def chat(req: ChatRequest):
         history=[m.model_dump() for m in req.history],
         selected_code=req.selected_code,
         selected_file=req.selected_file,
+        locale=req.locale,
     )
 
     async def event_gen():

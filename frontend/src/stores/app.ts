@@ -189,6 +189,24 @@ export const useApp = defineStore('app', {
       this.mainTab = map[mode]
     },
 
+    // 中间区 tab 切换 → 左侧工作模式联动
+    // (code tab 没有对应的 workMode,保持原 workMode 不变即可)
+    setMainTab(tab: State['mainTab']) {
+      this.mainTab = tab
+      const map: Partial<Record<State['mainTab'], WorkMode>> = {
+        results: 'search',
+        deps: 'analysis',
+        graph: 'flow',
+        docs: 'docs',
+      }
+      const mode = map[tab]
+      if (mode) this.workMode = mode
+    },
+
+    removeSearchHistory(q: string) {
+      this.searchHistory = this.searchHistory.filter((h) => h !== q)
+    },
+
     // 打开某符号的调用图(右键「查看调用图」入口)
     openCallGraph(symbolKey: string, label: string) {
       this.graphTarget = { symbolKey, label }

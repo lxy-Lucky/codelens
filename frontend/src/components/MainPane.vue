@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useApp } from '../stores/app'
 import type { CodeChunkHit } from '../api/types'
 
@@ -9,6 +10,7 @@ const GraphView = defineAsyncComponent(() => import('./GraphView.vue'))
 const DocsView = defineAsyncComponent(() => import('./DocsView.vue'))
 const AnalysisView = defineAsyncComponent(() => import('./AnalysisView.vue'))
 
+const { t } = useI18n()
 const app = useApp()
 const query = ref(app.searchQuery)
 
@@ -20,7 +22,7 @@ const ctx = ref<{ show: boolean; x: number; y: number; hit: CodeChunkHit | null 
   hit: null,
 })
 function onCtx(e: MouseEvent, hit: CodeChunkHit) {
-  if (!hit.symbol) return // 无符号名(整块/配置)无法定位调用图
+  if (!hit.symbol) return
   ctx.value = { show: true, x: e.clientX, y: e.clientY, hit }
 }
 function viewGraph() {
@@ -63,7 +65,7 @@ function openHit(hit: CodeChunkHit) {
       <div class="flex items-center gap-2">
         <input
           v-model="query"
-          placeholder="语义检索,如「用户登录在哪实现」…"
+          :placeholder="t('search.searchPlaceholder')"
           class="flex-1 px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-[0.8rem] outline-none focus:border-accent"
           @keydown.enter="onSearch"
         />
@@ -72,12 +74,12 @@ function openHit(hit: CodeChunkHit) {
           :disabled="app.searching || !app.currentRepoId"
           @click="onSearch"
         >
-          {{ app.searching ? '检索中…' : '检索' }}
+          {{ app.searching ? t('search.searching') : t('search.searchBtn') }}
         </button>
       </div>
-      <!-- language filter: 不选=全部 -->
+      <!-- language filter -->
       <div v-if="langs.length" class="flex items-center gap-1.5 mt-2 flex-wrap">
-        <span class="text-[0.62rem] text-txt-tertiary mr-0.5">语言</span>
+        <span class="text-[0.62rem] text-txt-tertiary mr-0.5">{{ t('search.languageFilter') }}</span>
         <button
           v-for="l in langs"
           :key="l"
@@ -92,47 +94,47 @@ function openHit(hit: CodeChunkHit) {
       </div>
     </div>
 
-    <!-- tabs -->
+    <!-- tabs:点击走 setMainTab,与左侧 workMode 联动 -->
     <div class="flex px-6 border-b border-border-subtle">
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'results' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
-        @click="app.mainTab = 'results'"
+        @click="app.setMainTab('results')"
       >
-        语义检索 <span class="text-[0.62rem]">{{ app.searchHits.length }}</span>
+        {{ t('tabs.results') }} <span class="text-[0.62rem]">{{ app.searchHits.length }}</span>
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'deps' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
-        @click="app.mainTab = 'deps'"
+        @click="app.setMainTab('deps')"
       >
-        代码分析
+        {{ t('tabs.deps') }}
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'graph' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
-        @click="app.mainTab = 'graph'"
+        @click="app.setMainTab('graph')"
       >
-        逻辑地图<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
+        {{ t('tabs.graph') }}<span v-if="app.graphTarget" class="font-mono text-[0.62rem]">· {{ app.graphTarget.label }}</span>
       </div>
       <div
         class="px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2"
         :class="app.mainTab === 'docs' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
-        @click="app.mainTab = 'docs'"
+        @click="app.setMainTab('docs')"
       >
-        文档生成
+        {{ t('tabs.docs') }}
       </div>
       <div
         class="group px-4 py-2 text-[0.76rem] font-medium cursor-pointer border-b-2 flex items-center gap-1.5"
         :class="app.mainTab === 'code' ? 'text-accent border-accent' : 'text-txt-tertiary border-transparent hover:text-txt-secondary'"
-        @click="app.mainTab = 'code'"
+        @click="app.setMainTab('code')"
       >
-        代码
+        {{ t('tabs.code') }}
         <span v-if="app.openFile" class="font-mono text-[0.62rem]">· {{ app.openFile.path.split('/').pop() }}</span>
         <button
           v-if="app.openFile"
           class="opacity-0 group-hover:opacity-100 w-4 h-4 grid place-items-center rounded text-txt-tertiary hover:text-err hover:bg-err/10 text-[0.7rem] leading-none"
-          title="关闭文件"
+          :title="t('tabs.closeFile')"
           @click.stop="app.closeFile()"
         >
           ✕
@@ -142,13 +144,12 @@ function openHit(hit: CodeChunkHit) {
 
     <!-- results -->
     <div v-show="app.mainTab === 'results'" class="flex-1 overflow-y-auto">
-      <!-- loading -->
       <div v-if="app.searching" class="flex flex-col items-center justify-center py-20 gap-3 text-txt-tertiary">
         <div class="w-7 h-7 border-2 border-border-medium border-t-accent rounded-full animate-spin" />
-        <div class="text-[0.78rem]">正在检索 “{{ app.searchQuery }}” …</div>
+        <div class="text-[0.78rem]">{{ t('search.searchingTip', { q: app.searchQuery }) }}</div>
       </div>
       <div v-else-if="!app.searchHits.length" class="p-16 text-center text-txt-tertiary text-[0.8rem]">
-        输入问题开始语义检索
+        {{ t('search.emptyTip') }}
       </div>
       <template v-else>
         <div
@@ -182,7 +183,7 @@ function openHit(hit: CodeChunkHit) {
         :highlight="app.openFile.highlight ?? null"
       />
       <div v-else class="p-16 text-center text-txt-tertiary text-[0.8rem]">
-        从左侧仓库结构点击文件查看代码
+        {{ t('code.openHint') }}
       </div>
     </div>
 
@@ -201,7 +202,7 @@ function openHit(hit: CodeChunkHit) {
       <DocsView />
     </div>
 
-    <!-- 右键菜单 -->
+    <!-- ctx menu -->
     <template v-if="ctx.show">
       <div class="fixed inset-0 z-40" @click="ctx.show = false" @contextmenu.prevent="ctx.show = false" />
       <div
@@ -209,7 +210,7 @@ function openHit(hit: CodeChunkHit) {
         :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
       >
         <button class="block w-full text-left px-3 py-1.5 hover:bg-bg-hover text-txt-secondary hover:text-txt-primary" @click="viewGraph">
-          🗺️ 查看调用图
+          {{ t('ctx.viewCallGraph') }}
         </button>
       </div>
     </template>

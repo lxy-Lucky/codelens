@@ -81,6 +81,8 @@ class ChatRequest(BaseModel):
     selected_range: Optional[tuple[int, int]] = None
     # 复用语义检索框选中的语言过滤(空=不限)
     languages: list[str] = Field(default_factory=list)
+    # LLM 输出语言偏好(UI 当前界面语言): zh / ja / en,默认 zh
+    locale: Literal["zh", "ja", "en"] = "zh"
 
 
 TreeNode.model_rebuild()

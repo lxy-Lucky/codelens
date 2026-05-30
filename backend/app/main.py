@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, docs, files, graph, repos, search
+from app.api import chat, docs, files, fs, graph, repos, search
 from app.services import neo4j_store, state
 from app.services.ollama_client import ollama
 
@@ -36,6 +36,7 @@ app.include_router(files.router)
 app.include_router(chat.router)
 app.include_router(graph.router)
 app.include_router(docs.router)
+app.include_router(fs.router)
 
 
 @app.get("/api/health")
